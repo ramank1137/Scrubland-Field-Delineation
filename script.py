@@ -12,6 +12,8 @@ import pickle
 from samgeo import tms_to_geotiff
 import math
 from datasets import *
+from itertools import product
+import ee
 PIL.Image.MAX_IMAGE_PIXELS = 2000000000
 
 module_paths=['decode/FracTAL_ResUNet/models/semanticsegmentation', 'decode/FracTAL_ResUNet/nn/loss']
@@ -428,12 +430,59 @@ def run_postprocessing(output_dir):
     
     save_field_boundaries(output_dir, instances_predicted)
     
-    
+"""
+
+Helper function for dividing an roi into blocks
+
+"""
+def get_n_boxes(lat, lon, n, zoom, scale):
+    diagonal_lat_lon = [(lat, lon),]
+    for i in range(n):
+        new_lat_lon = lat_lon_from_pixel(lat, lon, zoom, scale)
+        diagonal_lat_lon.append(new_lat_lon)
+        lat, lon = new_lat_lon
+    lats = [i[0] for i in diagonal_lat_lon]
+    longs = [i[1] for i in diagonal_lat_lon]
+    return list(product(lats, longs))
+
+def get_points(roi):
+    zoom = 17
+    scale = 16
+    bounds = roi.bounds().coordinates().get(0).getInfo()
+    lons = sorted([i[0] for i in bounds])
+    lats = sorted([i[1] for i in bounds])
+    starting_point = lats[-1], lons[0]
+    min_, max_ = (
+        [lon_to_pixel_x(lons[0], zoom), lat_to_pixel_y(lats[0], zoom) ],
+        [lon_to_pixel_x(lons[-1], zoom), lat_to_pixel_y(lats[-1], zoom)]
+        )
+    iterations = math.ceil(max(abs(min_[0] -  max_[0]), abs(min_[1] - max_[1]))/256/16)
+    points = get_n_boxes(starting_point[0], starting_point[1], iterations, zoom, scale)
+    intersect_list = []
+    print(len(points))
+    for point in points:
+        top_left = point
+        bottom_right = lat_lon_from_pixel(top_left[0], top_left[1], zoom, scale)
+        rectangle = ee.Geometry.Rectangle([(top_left[1], top_left[0]), (bottom_right[1], bottom_right[0])])
+        print(top_left, bottom_right)
+        intersects = roi.geometry().intersects(rectangle, ee.ErrorMargin(1)).getInfo()
+        if intersects:
+            intersect_list.append(top_left)
+        print(intersects)
+    return intersect_list
+
+
 if __name__ == "__main__":
-    # bbox, output_dir
-    bbox = (22.74995876, 86.00702175250001)
-    output_dir = "output/test"
-    download(bbox, output_dir)
-    run_model(output_dir)
-    get_segmentation(output_dir)
-    run_postprocessing(output_dir)
+    
+    ee.Authenticate() 
+    ee.Initialize(project='ee-raman')
+    roi = ee.FeatureCollection("projects/df-project-iit/assets/core-stack/tamil_nadu/theni/periyakulam/filtered_mws_theni_periyakulam_uid").filter(ee.Filter.stringContains("uid", "2_25099"))
+    directory = "tamil_nadu"
+    points = get_points(roi)
+    print("Running for " + str(len(points)) + " points...")
+    for index, point in enumerate(points):
+        output_dir = directory + "_" + str(index)
+        download(point, output_dir)
+        run_model(output_dir)
+        get_segmentation(output_dir)
+        run_postprocessing(output_dir)
