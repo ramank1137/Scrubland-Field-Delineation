@@ -14,6 +14,7 @@ import math
 from datasets import *
 from itertools import product
 import ee
+import geopandas as gpd
 PIL.Image.MAX_IMAGE_PIXELS = 2000000000
 
 module_paths=['decode/FracTAL_ResUNet/models/semanticsegmentation', 'decode/FracTAL_ResUNet/nn/loss']
@@ -36,6 +37,7 @@ from skimage.restoration import (
 from osgeo import gdal, ogr, osr
 from samgeo.common import raster_to_shp
 import zipfile
+import pandas as pd
 
 original_image, min_j, min_i, max_j, max_i, instances_predicted = (0,0,0,0,0,0)
 
@@ -288,35 +290,79 @@ def get_entropy_plantation(img, mask):
     ent = sum(ent)/(sum(sum(mask)))
     return ent
 
-def get_lines_by_hough(img):
+def get_lines_by_hough(img, mask):
     masked_image_np = np.array(img.convert("L"))
     #_, binary_image = cv2.threshold(masked_image_np, 50, 255, cv2.THRESH_BINARY)
     edges = cv2.Canny(masked_image_np, 50, 150)
-
+    erosion_size = 1
+    # Define the kernel for erosion
+    kernel = np.ones((erosion_size, erosion_size), np.uint8)
+    # Erode the mask to remove edge pixels
+    eroded_mask = cv2.erode(mask.astype(np.uint8) * 255, kernel, iterations=1)
+    #print(index)
+    edges = cv2.bitwise_and(edges, edges, mask=eroded_mask)
     # Perform Hough Line Transformation
     lines = cv2.HoughLinesP(edges, 1, np.pi/180, threshold=50, minLineLength=50, maxLineGap=30)
-    if lines is not None and len(lines)>4:
+    if lines is not None and len(lines)>2:
         return 1
     else:
         return 0
+
+def get_rectangularity(mask):
+    """
+    Compute how rectangular a given binary mask is.
+    
+    Args:
+        mask (np.ndarray): Binary mask (1 for object, 0 for background)
+    
+    Returns:
+        float: Rectangularity score (1.0 is a perfect rectangle, lower means less rectangular)
+    """
+    # Find contours
+    contours, _ = cv2.findContours(mask.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    
+    if not contours:
+        return 0  # No object found
+    
+    # Get the largest contour
+    contour = max(contours, key=cv2.contourArea)
+    
+    # Compute contour area
+    contour_area = cv2.contourArea(contour)
+    
+    # Compute minimum area rectangle (rotated)
+    rect = cv2.minAreaRect(contour)
+    box = cv2.boxPoints(rect)
+    box = np.int0(box)
+    bounding_rect_area = cv2.contourArea(box)
+    
+    if bounding_rect_area == 0:
+        return 0  # Avoid division by zero
+    
+    # Compute rectangularity score
+    rectangularity_score = contour_area / bounding_rect_area
+    
+    return rectangularity_score
     
 def map_entropy(index):
     img, mask = crop_image_by_mask(original_image, index)
     ent = get_entropy(img, mask)
+    rectangularity = get_rectangularity(mask)
     color_map = 0
     #if index == 5341:
     #    print(sum(sum(mask)))
-    if sum(sum(mask)) > 30000:
+    size_of_segment = sum(sum(mask))
+    if size_of_segment > 80000:
         color_map = 0 
-    elif ent < 1:# or ent > 5:
+    elif ent < 1 and rectangularity>0.6:# or ent > 5:
         color_map = 1
     else:
         ent_plantation = get_entropy_plantation(img, mask)
-        if ent_plantation < 8.5:
-            color_map = 1
-        lines = get_lines_by_hough(img)
-        if lines == 1:
-            color_map = 1
+        if ent_plantation < 8.5 and rectangularity>0.67 and size_of_segment<20000:
+            color_map = 2
+        lines = get_lines_by_hough(img, mask)
+        if lines == 1 and rectangularity>0.67 and size_of_segment<20000:
+            color_map = 2
     return (ent, index, color_map)
 
 def set_global_for_multiprocessing(oi, mnj, mni, mxj, mxi, ip):
@@ -341,11 +387,13 @@ def process_in_chunks(number, chunk_size):
             results += p.map(map_entropy,list(range(start,end)))
     return results
 
-def get_color(color_dict):
+def get_color(color_dict, index):
     def color(ind):
         label = color_dict.get(ind)
-        if label==1:
+        if label==index:
             label = ind
+        else:
+            label = 0
         return label
     return color
 
@@ -376,7 +424,7 @@ def get_min_max_array(instances_predicted):
             max_j[val] = max(j, max_j[val])
     return min_i, min_j, max_i, max_j
 
-def save_field_boundaries(output_dir, instances_predicted):
+def save_field_boundaries(output_dir, instances_predicted, vector_name):
     ds = gdal.Open(output_dir + "/field.tif")
 
     band = ds.GetRasterBand(1)
@@ -386,7 +434,6 @@ def save_field_boundaries(output_dir, instances_predicted):
     arr_max = arr.max()
 
     driver = gdal.GetDriverByName("GTiff")
-
     outdata = driver.Create(output_dir + "/out.tif", cols, rows, 1, gdal.GDT_UInt16)
     outdata.SetGeoTransform(ds.GetGeoTransform())##sets same geotransform as input
     outdata.SetProjection(ds.GetProjection())##sets same projection as input
@@ -396,13 +443,19 @@ def save_field_boundaries(output_dir, instances_predicted):
     outdata = None
     band=None
     ds=None
-    raster_to_shp(tiff_path=output_dir + "/out.tif", output=output_dir + "/out.shp")
-    zip = zipfile.ZipFile(output_dir + "/"+output_dir.split("/")[-1]+".zip", "w", zipfile.ZIP_DEFLATED)
-    files = ["out.shp", "out.cpg", "out.dbf", "out.prj", "out.shx"]
-    for file in files:
-        zip.write(output_dir + "/" + file)
-    zip.close()
-    for file in files + ["out.tif"]:
+    raster_to_shp(tiff_path=output_dir + "/out.tif", output=output_dir + "/" +vector_name+ ".shp")
+    gdf = gpd.read_file(output_dir + "/" +vector_name+ ".shp")
+    gdf = gdf.set_crs('epsg:3857', allow_override=True)
+    print(f"Original CRS: {gdf.crs}")
+    gdf = gdf.to_crs(epsg=4326)
+    print(f"Reprojected CRS: {gdf.crs}")
+    gdf.to_file(output_dir + "/" + vector_name + ".shp")
+    #zip = zipfile.ZipFile(output_dir + "/"+vector_name+".zip", "w", zipfile.ZIP_DEFLATED)
+    #files = ["out.shp", "out.cpg", "out.dbf", "out.prj", "out.shx"]
+    #for file in files:
+    #    zip.write(output_dir + "/" + file)
+    #zip.close()
+    for file in ["out.tif"]:
         os.remove(output_dir + "/" + file)
 
 def run_postprocessing(output_dir):
@@ -421,14 +474,44 @@ def run_postprocessing(output_dir):
 
     min_i, min_j, max_i, max_j = get_min_max_array(instances_predicted)
     set_global_for_multiprocessing(original_image, min_j, min_i, max_j, max_i, instances_predicted)
-    
+    print("Haha")
     results = process_in_chunks(segments+1, 12000)
     color_dict = {i[1]:i[2] for i in results}
     color_dict[0] = 0
-    color = get_color(color_dict)
-    instances_predicted = np.vectorize(color)(instances_predicted)
     
-    save_field_boundaries(output_dir, instances_predicted)
+    farm_color = get_color(color_dict, 1)
+    plantation_color = get_color(color_dict, 2)
+    instances_predicted_farm = np.vectorize(farm_color)(instances_predicted)
+    instances_predicted_plantation = np.vectorize(plantation_color)(instances_predicted)
+    
+    save_field_boundaries(output_dir, instances_predicted_farm, "farm")
+    save_field_boundaries(output_dir, instances_predicted_plantation, "plantation")
+    
+def zip_vector(output_dir, vector_name):
+    zip = zipfile.ZipFile(output_dir + "/"+vector_name+".zip", "w", zipfile.ZIP_DEFLATED)
+    files = [vector_name+i for i in [".shp", ".cpg", ".dbf", ".prj", ".shx"]]
+    for file in files:
+        zip.write(output_dir + "/" + file)
+    zip.close()
+    
+def join_boundaries(output_dir, blocks_count):
+    gdf_farm = None
+    gdf_plantation = None
+    for i in range(0, blocks_count):
+        gdf_farm_new = gpd.read_file(output_dir+"/"+str(i)+"/farm.shp")
+        gdf_plantation_new = gpd.read_file(output_dir+"/"+str(i)+"/plantation.shp")
+        if i == 0:
+            gdf_farm = gdf_farm_new
+            gdf_plantation = gdf_plantation_new
+        else:
+            gdf_farm = pd.concat([gdf_farm, gdf_farm_new])
+            gdf_plantation = pd.concat([gdf_plantation, gdf_plantation_new])
+
+    gdf_farm.to_file(output_dir+"/farm.shp")
+    gdf_plantation.to_file(output_dir+"/plantation.shp")
+    
+    zip_vector(output_dir, "farm")
+    zip_vector(output_dir, "plantation")
     
 """
 
@@ -476,13 +559,24 @@ if __name__ == "__main__":
     
     ee.Authenticate() 
     ee.Initialize(project='ee-raman')
-    roi = ee.FeatureCollection("projects/df-project-iit/assets/core-stack/tamil_nadu/theni/periyakulam/filtered_mws_theni_periyakulam_uid").filter(ee.Filter.stringContains("uid", "2_25099"))
-    directory = "tamil_nadu"
+    #roi = ee.FeatureCollection("projects/df-project-iit/assets/core-stack/tamil_nadu/theni/periyakulam/filtered_mws_theni_periyakulam_uid").filter(ee.Filter.stringContains("uid", "2_25099"))
+    #directory = "tamil_nadu"
+    top_left = [19.61346189, 75.38005825]  # Replace lon1 and lat1 with actual values
+    bottom_right = [19.44480749, 75.53687926]  # Replace lon2 and lat2 with actual values
+    directory = "Area_paithan"
+    
+    # Create a rectangle geometry using the defined corners
+    rectangle = ee.Geometry.Rectangle([top_left[1], bottom_right[0], bottom_right[1], top_left[0]])
+    print("Area of the Rectangle is ", rectangle.area().getInfo()/1e6)
+    # Create a feature collection with the rectangle as a boundary
+    
+    roi = ee.FeatureCollection([ee.Feature(rectangle)])
     points = get_points(roi)
     print("Running for " + str(len(points)) + " points...")
     for index, point in enumerate(points):
-        output_dir = directory + "_" + str(index)
+        output_dir = directory + "/" + str(index)
         download(point, output_dir)
         run_model(output_dir)
         get_segmentation(output_dir)
         run_postprocessing(output_dir)
+    join_boundaries(directory, len(points))
