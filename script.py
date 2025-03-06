@@ -559,18 +559,23 @@ if __name__ == "__main__":
     
     ee.Authenticate() 
     ee.Initialize(project='ee-raman')
-    #roi = ee.FeatureCollection("projects/df-project-iit/assets/core-stack/tamil_nadu/theni/periyakulam/filtered_mws_theni_periyakulam_uid").filter(ee.Filter.stringContains("uid", "2_25099"))
-    #directory = "tamil_nadu"
-    top_left = [19.61346189, 75.38005825]  # Replace lon1 and lat1 with actual values
-    bottom_right = [19.44480749, 75.53687926]  # Replace lon2 and lat2 with actual values
-    directory = "Area_paithan"
+    # Set ROI and directory name below
+    roi = ee.FeatureCollection("projects/df-project-iit/assets/core-stack/tamil_nadu/theni/periyakulam/filtered_mws_theni_periyakulam_uid").filter(ee.Filter.stringContains("uid", "2_25099"))
+    directory = "tamil_nadu"
+
+    #Boiler plate code to run for a rectangle
+    
+    #top_left = [19.61346189, 75.38005825]  # Replace lon1 and lat1 with actual values
+    #bottom_right = [19.44480749, 75.53687926]  # Replace lon2 and lat2 with actual values
+    #directory = "Area_paithan"
     
     # Create a rectangle geometry using the defined corners
-    rectangle = ee.Geometry.Rectangle([top_left[1], bottom_right[0], bottom_right[1], top_left[0]])
-    print("Area of the Rectangle is ", rectangle.area().getInfo()/1e6)
-    # Create a feature collection with the rectangle as a boundary
+    #rectangle = ee.Geometry.Rectangle([top_left[1], bottom_right[0], bottom_right[1], top_left[0]])
+    #print("Area of the Rectangle is ", rectangle.area().getInfo()/1e6)
     
-    roi = ee.FeatureCollection([ee.Feature(rectangle)])
+    # Create a feature collection with the rectangle as a boundary
+    #roi = ee.FeatureCollection([ee.Feature(rectangle)])
+    
     points = get_points(roi)
     print("Running for " + str(len(points)) + " points...")
     for index, point in enumerate(points):
