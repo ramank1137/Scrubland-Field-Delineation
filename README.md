@@ -8,8 +8,8 @@ This repo is enabled to run inside a docker container. It requires `Docker Engin
 ### Building Docker Image
 After this, the docker image can be built by executing following command inside this github repo folder `Scrubland-Field-Delineation`
 
-`sudo docker build --progress=plain -t farm4 .`
+`sudo docker build --progress=plain -t <image-name> .`
 
 Use the following if you don't want to see the progress
 
-`sudo docker build -t farm4 .`
+`sudo docker build -t <image-name> .`
