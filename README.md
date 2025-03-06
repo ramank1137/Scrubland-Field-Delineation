@@ -28,4 +28,4 @@ Inside the container, the required environment is pre-activated for convenience.
 
 When a new container is started for the first time, this will prompt a link for authenticating into Google Earth Engine. Click the link or copy and paste it into a browser, then log in using a Google account associated with Google Earth Engine. After authentication, you will receive an access key, which should be pasted into the Docker container to complete the authentication process. Once authenticated, the script will process the specified Region of Interest(ROI) and generate vector boundaries for farms, plantations, and scrubland.
 
-You can set the ROI inside the `script.py` 
+You can set the ROI inside the `script.py` after `ee.Initialize` in `__main__` block. A boilerplate code for running on a rectangular region instead of any polygon ROI is also provided after the ROI declaration which commented out for ease of testing. Also set the `directory` which will be used to download images, store predictions and store vector boundaries.
