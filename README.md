@@ -13,3 +13,8 @@ After this, the docker image can be built by executing following command inside 
 Use the following if you don't want to see the progress
 
 `sudo docker build -t <image-name> .`
+
+### Starting Docker container
+To start docker container please run the following command.
+
+`sudo docker run --shm-size=60gb --gpus all --init -it -v $(pwd):/app <image-name> bash`
