@@ -23,7 +23,7 @@ To start docker container please run the following command.
 `sudo docker run --shm-size=60gb --gpus all --init -it -v $(pwd):/app <image-name> bash`
 
 ### Running Script
-Inside the container, the required environment is pre-activated for convenience. You can run the script using the following command.
+Inside the container, the required environment is pre-activated for convenience. The `script.py` is the one that needs to be executed to obtaine vector boundaries of fields, plantation and scrubland. Before running it download the model (`india_Airbus_SPOT_model.params`) from [here](https://zenodo.org/records/7315090) and place it inside `Scrubland-Field-Delineation` folder. After this you can run the script using the following command.
 `python script.py`
 
 When a new container is started for the first time, this will prompt a link for authenticating into Google Earth Engine. Click the link or copy-paste it into a browser, then log in using a Google account associated with Google Earth Engine. After authentication, you will receive an access key, which should be pasted into the Docker container to complete the authentication process. Once authenticated, the script will process the specified Region of Interest(ROI) and generate vector boundaries for farms, plantations, and scrubland.
