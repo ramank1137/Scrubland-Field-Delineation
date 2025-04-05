@@ -15,6 +15,7 @@ from datasets import *
 from itertools import product
 import ee
 import geopandas as gpd
+from ultralytics import YOLO
 PIL.Image.MAX_IMAGE_PIXELS = 2000000000
 
 module_paths=['decode/FracTAL_ResUNet/models/semanticsegmentation', 'decode/FracTAL_ResUNet/nn/loss']
@@ -41,6 +42,12 @@ import pandas as pd
 from itertools import combinations
 
 original_image, min_j, min_i, max_j, max_i, instances_predicted = (0,0,0,0,0,0)
+mapping = {
+    "farm": 1,
+    "plantation": 2,
+    "scrubland": 3,
+    "rest": 0
+}
 
 """
     Helper functions to Download High Resolution Images
@@ -426,13 +433,13 @@ def map_entropy(index):
     redness = np.mean(cv2.split(np.array(img))[0])
     red = redness/greeness
     easy_farm = rectangularity>=0.67 and size>500 and size <2000 and ent<1
-    easy_plantation =  rectangularity>=0.7 and size>500 and size<20000 and ent>4 and len(right_angles)>5
+    #easy_plantation =  rectangularity>=0.7 and size>500 and size<20000 and ent>4 and len(right_angles)>5
     easy_scrub = (ent>2.5 and len(lines)<=1 and size>2000 and rectangularity<0.67 and red>1) or size>100000
     color_map = 0
     if easy_farm:
         color_map = 1
-    elif easy_plantation:
-        color_map = 2
+    #elif easy_plantation:
+    #    color_map = 2
     elif easy_scrub:
         color_map = 3
     return (index, color_map)
@@ -555,18 +562,17 @@ def run_postprocessing(output_dir):
 
     min_i, min_j, max_i, max_j = get_min_max_array(instances_predicted)
     set_global_for_multiprocessing(original_image, min_j, min_i, max_j, max_i, instances_predicted)
-    print("Haha")
     results = process_in_chunks(segments+1, 12000)
     color_dict = {i[0]:i[1] for i in results}
     color_dict[0] = 4
     
-    farm_color = get_color(color_dict, 1)
-    plantation_color = get_color(color_dict, 2)
-    scrubland_color = get_color(color_dict, 3)
-    rest_color = get_color(color_dict, 0)
+    farm_color = get_color(color_dict, mapping["farm"])
+    #plantation_color = get_color(color_dict, mapping["plantation"])
+    scrubland_color = get_color(color_dict, mapping["scrubland"])
+    rest_color = get_color(color_dict, mapping["rest"])
     
     instances_predicted_farm = np.vectorize(farm_color)(instances_predicted)
-    instances_predicted_plantation = np.vectorize(plantation_color)(instances_predicted)
+    #instances_predicted_plantation = np.vectorize(plantation_color)(instances_predicted)
     instances_predicted_scrubland = np.vectorize(scrubland_color)(instances_predicted)
     instances_predicted_rest = np.vectorize(rest_color)(instances_predicted)
     
@@ -582,7 +588,7 @@ def zip_vector(output_dir, vector_name):
         zip.write(output_dir + "/" + file)
     zip.close()
     
-def join_boundaries_helper(output_dir, blocks_count, domain):
+def join_boundaries_for_domain(output_dir, blocks_count, domain):
     gdf = None
     for i in range(0, blocks_count):
         gdf_new = gpd.read_file(output_dir+"/"+str(i)+"/"+domain+".shp")
@@ -595,8 +601,18 @@ def join_boundaries_helper(output_dir, blocks_count, domain):
 
         
 def join_boundaries(output_dir, blocks_count):
-    for domain in ["farm", "plantation", "scrubland", "rest"]:
-        join_boundaries_helper(output_dir, blocks_count, domain)
+    gdf = None
+    for ind, domain in enumerate(["farm", "plantation", "scrubland", "rest"]):
+        join_boundaries_for_domain(output_dir, blocks_count, domain)
+        gdf_new = gpd.read_file(output_dir+"/"+domain+".shp")
+        gdf_new["class"] = domain
+        if ind==0:
+            gdf = gdf_new
+        else:
+            gdf = pd.concat([gdf, gdf_new])
+    
+    gdf.to_file(output_dir+"/all.shp")
+    zip_vector(output_dir, "all")
     
 """
 
@@ -665,7 +681,6 @@ def process_image(image_path, model, conf_thresholds, class_names):
         binary_array = (sum_array > 0).astype(np.uint8)
     return image_path, binary_array, pred_classes, conf_scores
 
-from ultralytics import YOLO
 
 def stitch_masks(masks):
     image_size = 256
@@ -741,9 +756,9 @@ if __name__ == "__main__":
     print("Running for " + str(len(points)) + " points...")
     for index, point in enumerate(points):
         output_dir = directory + "/" + str(index)
-        #download(point, output_dir)
-        #run_model(output_dir)
-        #get_segmentation(output_dir)
-        #run_postprocessing(output_dir)
+        download(point, output_dir)
+        run_model(output_dir)
+        get_segmentation(output_dir)
+        run_postprocessing(output_dir)
         masks = run_plantation_model(output_dir)
     join_boundaries(directory, len(points))
