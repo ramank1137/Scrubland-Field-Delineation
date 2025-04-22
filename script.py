@@ -295,6 +295,7 @@ def get_segmentation(output_dir, row, index, directory, blocks_df):
     print("Max segments are ", segments)
     with open(output_dir + '/instance_predicted.pickle', 'wb') as handle:
         pickle.dump(instances_predicted, handle, protocol=pickle.HIGHEST_PROTOCOL)
+    mark_done(index, directory, blocks_df, "segmentation_status")
         
 def crop_image_by_mask(image, index):
     # Find the bounding box of the True values in the mask
@@ -698,7 +699,7 @@ def get_n_boxes(lat, lon, n, zoom, scale):
 def get_points(roi, directory):
     points_file = Path(directory + "/status.csv")
     if points_file.is_file():
-        df = pd.read_csv(directory + "/status.csv")
+        df = pd.read_csv(directory + "/status.csv", index_col=False)
         df["points"] = df['points'].apply(ast.literal_eval)
         return df
     zoom = 17
@@ -724,6 +725,7 @@ def get_points(roi, directory):
         intersects = roi.geometry().intersects(rectangle, ee.ErrorMargin(1)).getInfo()
         if intersects:
             intersect_list.append((index, (top_left,bottom_right)))
+            index+=1
         print(intersects)
     df = pd.DataFrame(intersect_list, columns=["index", "points"])
     df["overall_status"] = False
@@ -732,7 +734,7 @@ def get_points(roi, directory):
     df["segmentation_status"] = False
     df["postprocessing_status"] = False
     df["plantation_status"] = False
-    df.to_csv(directory + "/status.csv")
+    df.to_csv(directory + "/status.csv", index=False)
     return df
 
 def process_image(image_path, model, conf_thresholds, class_names):
@@ -762,7 +764,7 @@ def process_image(image_path, model, conf_thresholds, class_names):
     return image_path, binary_array, pred_classes, conf_scores
 
 
-def stitch_masks(masks):
+def stitch_masks(masks, output_dir):
     image_size = 256
     gt_bound_names=glob(output_dir + '/chunks/*.tif')
     gt_bound_names = [i for i in gt_bound_names if "chunk_" in i]
@@ -809,15 +811,15 @@ def run_plantation_model(output_dir, row, index, directory, blocks_df):
     for image in image_names:
         _, mask, _, _ = process_image(image, model, conf_thresholds, class_names)
         masks.append(mask)
-    mask = stitch_masks(masks)
+    mask = stitch_masks(masks, output_dir)
     save_field_boundaries(output_dir, mask.T, others="plantation")
     mark_done(index, directory, blocks_df, "plantation_status")
     return
 
 def mark_done(index, output_dir, df, label):
-    df = pd.read_csv(output_dir + "/status.csv")
+    df = pd.read_csv(output_dir + "/status.csv", index_col=False)
     df.loc[df['index'] == index, label] = True
-    df.to_csv(output_dir + "/status.csv")
+    df.to_csv(output_dir + "/status.csv", index=False)
 
 
 def run(roi, directory, max_tries=5, delay=1):
