@@ -599,7 +599,11 @@ def save_field_boundaries(output_dir, instances_predicted, df=None, others=None)
         gdf = gdf.merge(df, on='value')
         gdf.to_file(output_dir + "/all.shp")
     if "plantation"==others:
-        raster_to_shp(tiff_path=output_dir + "/out.tif", output=output_dir + "/plantation.shp")
+        if sum(sum(instances_predicted)) == 0:
+            gdf = gpd.GeoDataFrame(columns=["id", "geometry"], geometry="geometry", crs="EPSG:4326")
+            gdf.to_file(output_dir + "/"+others+".shp")
+        else:
+            raster_to_shp(tiff_path=output_dir + "/out.tif", output=output_dir + "/plantation.shp")
         gdf = gpd.read_file(output_dir + "/plantation.shp")
         gdf = gdf.set_crs('epsg:3857', allow_override=True)
         print(f"Original CRS: {gdf.crs}")
@@ -788,6 +792,7 @@ def stitch_masks(masks, output_dir):
         
     with open(output_dir + '/plantations_predicted.pickle', 'wb') as handle:
         pickle.dump(instances_predicted, handle, protocol=pickle.HIGHEST_PROTOCOL)
+    
     return stitched_image_array
         
 def run_plantation_model(output_dir, row, index, directory, blocks_df):
