@@ -700,6 +700,22 @@ def get_n_boxes(lat, lon, n, zoom, scale):
     longs = [i[1] for i in diagonal_lat_lon]
     return list(product(lats, longs))
 
+def latlon_to_tile_xy(lat, lon, zoom):
+    """Converts lat/lon to tile x/y at given zoom level"""
+    lat_rad = math.radians(lat)
+    n = 2.0 ** zoom
+    tile_x = int((lon + 180.0) / 360.0 * n)
+    tile_y = int((1.0 - math.log(math.tan(lat_rad) + 1 / math.cos(lat_rad)) / math.pi) / 2.0 * n)
+    return tile_x, tile_y
+
+def tile_xy_to_latlon(tile_x, tile_y, zoom):
+    """Converts top-left corner of tile x/y at given zoom level to lat/lon"""
+    n = 2.0 ** zoom
+    lon_deg = tile_x / n * 360.0 - 180.0
+    lat_rad = math.atan(math.sinh(math.pi * (1 - 2 * tile_y / n)))
+    lat_deg = math.degrees(lat_rad)
+    return lat_deg, lon_deg
+
 def get_points(roi, directory):
     points_file = Path(directory + "/status.csv")
     if points_file.is_file():
@@ -711,10 +727,14 @@ def get_points(roi, directory):
     bounds = roi.bounds().coordinates().get(0).getInfo()
     lons = sorted([i[0] for i in bounds])
     lats = sorted([i[1] for i in bounds])
-    starting_point = lats[-1], lons[0]
+    
+    tile_x, tile_y = latlon_to_tile_xy(lats[-1], lons[0], zoom)
+    top_left_lat, top_left_lon = tile_xy_to_latlon(tile_x, tile_y, zoom)
+    
+    starting_point = top_left_lat, top_left_lon
     min_, max_ = (
-        [lon_to_pixel_x(lons[0], zoom), lat_to_pixel_y(lats[0], zoom) ],
-        [lon_to_pixel_x(lons[-1], zoom), lat_to_pixel_y(lats[-1], zoom)]
+        [lon_to_pixel_x(top_left_lon, zoom), lat_to_pixel_y(lats[0], zoom) ],
+        [lon_to_pixel_x(lons[-1], zoom), lat_to_pixel_y(top_left_lat, zoom)]
         )
     iterations = math.ceil(max(abs(min_[0] -  max_[0]), abs(min_[1] - max_[1]))/256/16)
     points = get_n_boxes(starting_point[0], starting_point[1], iterations, zoom, scale)
