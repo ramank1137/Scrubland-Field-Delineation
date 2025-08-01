@@ -48,6 +48,8 @@ RUN conda install -y -c conda-forge nccl
 RUN conda install -y -c conda-forge gdal==3.6.2
 RUN pip install -q mxnet-cu117
 RUN pip install -q ultralytics
+RUN pip uninstall -y scipy
+RUN pip install -q scipy==1.15.1
 RUN pip uninstall -y numpy
 RUN pip install -q numpy==1.23.1
 

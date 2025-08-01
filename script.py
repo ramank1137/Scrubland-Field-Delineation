@@ -820,7 +820,7 @@ def run_plantation_model(output_dir, row, index, directory, blocks_df):
         return
     model_path = "plantation_model.pt"
     conf_thresholds = {
-        'plantations': 0.3,
+        'plantations': 0.5,
     }
     class_names = [
         'plantations',
@@ -883,8 +883,9 @@ if __name__ == "__main__":
     ee.Authenticate() 
     ee.Initialize(project='ee-raman')
     # Set ROI and directory name below
-    roi = ee.FeatureCollection("users/mtpictd/india_block_boundaries").filter(ee.Filter.eq("block", "Peddapally"))
-    directory = "Area_Peddapally"
+    #roi = ee.FeatureCollection("users/mtpictd/india_block_boundaries").filter(ee.Filter.eq("block", "Peddapally"))
+    roi = False
+    directory = "AEZ_7"
 
     #Boiler plate code to run for a rectangle
     
@@ -899,7 +900,7 @@ if __name__ == "__main__":
     
     os.makedirs(directory, exist_ok=True)
     sys.stdout = Logger(directory + "/output.log")
-    print("Area of the Rectangle is ", roi.geometry().area().getInfo()/1e6)
+    #print("Area of the Rectangle is ", roi.geometry().area().getInfo()/1e6)
     
     
     
