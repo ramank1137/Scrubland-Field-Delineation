@@ -42,6 +42,11 @@ from commons import raster_to_shp
 import zipfile
 import pandas as pd
 from itertools import combinations
+from datetime import datetime
+from scipy.spatial.distance import jensenshannon
+from pydrive2.auth import GoogleAuth
+from pydrive2.drive import GoogleDrive
+
 
 original_image, min_j, min_i, max_j, max_i, instances_predicted = (0,0,0,0,0,0)
 mapping = {
@@ -471,31 +476,31 @@ def map_entropy_(index):
             color_map = 2
     return (index, color_map)
 
-def map_entropy(index):
+def map_entropy_old(index):
     img, mask = crop_image_by_mask(original_image, index)
     ent = get_entropy(img, mask)
-    ent_plantation = get_entropy_plantation(img, mask)
+    #ent_plantation = get_entropy_plantation(img, mask)
     rectangularity = get_rectangularity(mask)
-    fractal_dimension = get_perimeter_area_fractal_dimension(mask)
+    #fractal_dimension = get_perimeter_area_fractal_dimension(mask)
     size = sum(sum(mask))
-    lines = get_ht_lines(img, mask)
-    right_angles = check_right_angles(lines)
+    #lines = get_ht_lines(img, mask)
+    #right_angles = check_right_angles(lines)
     #print(fractal_dimension)
-    blueness = np.mean(cv2.split(np.array(img))[2])
-    greeness = np.mean(cv2.split(np.array(img))[1])
-    redness = np.mean(cv2.split(np.array(img))[0])
-    red = redness/greeness
+    #blueness = np.mean(cv2.split(np.array(img))[2])
+    #greeness = np.mean(cv2.split(np.array(img))[1])
+    #redness = np.mean(cv2.split(np.array(img))[0])
+    #red = redness/greeness
     
-    easy_farm = rectangularity>=0.67 and size>500 and size <2000 and ent<1
+    #easy_farm = rectangularity>=0.67 and size>500 and size <2000 and ent<1
     #easy_plantation =  rectangularity>=0.7 and size>500 and size<20000 and ent>4 and len(right_angles)>5
-    easy_scrub = (ent>2.5 and len(lines)<=1 and size>2000 and rectangularity<0.67 and red>1) or size>100000
-    class_ = "rest"
-    if easy_farm:
-        class_ = "farm"
+    #easy_scrub = (ent>2.5 and len(lines)<=1 and size>2000 and rectangularity<0.67 and red>1) or size>100000
+    #class_ = "rest"
+    #if easy_farm:
+    #    class_ = "farm"
     #elif easy_plantation:
     #    color_map = 2
-    elif easy_scrub:
-        class_ = "scrubland"
+    #elif easy_scrub:
+    #    class_ = "scrubland"
     return (index,
             class_,
             ent,
@@ -509,6 +514,17 @@ def map_entropy(index):
             greeness,
             redness,
             red)
+    
+def map_entropy(index):
+    img, mask = crop_image_by_mask(original_image, index)
+    ent = get_entropy(img, mask)
+    rectangularity = get_rectangularity(mask)
+    size = sum(sum(mask))
+    return (index,
+            ent,
+            rectangularity,
+            size,
+            )
 
 def set_global_for_multiprocessing(oi, mnj, mni, mxj, mxi, ip):
     global original_image
@@ -634,18 +650,19 @@ def run_postprocessing(output_dir, row, index, directory, blocks_df):
     set_global_for_multiprocessing(original_image, min_j, min_i, max_j, max_i, instances_predicted)
     results = process_in_chunks(segments+1, 12000)
     df = pd.DataFrame(results, columns = ["value",
-            "class",
+            #"class",
             "ent",
-            "ent_pl",
+            #"ent_pl",
             "rect",
-            "frct_dim",
+            #"frct_dim",
             "size",
-            "num_lines",
-            "num_rt_ang",
-            "blueness",
-            "greeness",
-            "redness",
-            "red"])
+            #"num_lines",
+            #"num_rt_ang",
+            #"blueness",
+            #"greeness",
+            #"redness",
+            #"red"
+            ])
     save_field_boundaries(output_dir, instances_predicted, df=df)
     mark_done(index, directory, blocks_df, "postprocessing_status")
     
@@ -656,32 +673,41 @@ def zip_vector(output_dir, vector_name):
         zip.write(output_dir + "/" + file)
     zip.close()
 
-def join_boundaries_for_domain(output_dir, blocks_count, domain):
+def divide_into_chunks(block_size, chunk_size=150):
+    chunks = []
+    for start in range(0, block_size, chunk_size):
+        end = min(start + chunk_size - 1, block_size - 1)
+        chunks.append((start, end))
+    return chunks
+
+def join_boundaries_for_domain(output_dir, ind, block_start, block_end, domain):
     gdf = None
-    for i in range(0, blocks_count):
+    for i in range(block_start, block_end):
         gdf_new = gpd.read_file(output_dir+"/"+str(i)+"/"+domain+".shp")
         if i==0:
             gdf = gdf_new
         else:
             gdf = pd.concat([gdf, gdf_new])
-    gdf.to_file(output_dir+"/"+domain+".shp")
-    zip_vector(output_dir, domain)
+    gdf.to_file(output_dir+"/"+domain+"_" +str(ind)+".shp")
+    #zip_vector(output_dir, domain)
     
 def join_boundaries(output_dir, blocks_count):
     if os.path.exists(output_dir + "/all_done"):
         print("Everything already done")
         return
-    gdf = None
-    for ind, domain in enumerate(["all", "plantation"]):
-        join_boundaries_for_domain(output_dir, blocks_count, domain)
-        gdf_new = gpd.read_file(output_dir+"/"+domain+".shp")
-        if ind==0:
-            gdf = gdf_new
-        else:
-            gdf = pd.concat([gdf, gdf_new])
-    
-    gdf.to_file(output_dir+"/all.shp")
-    zip_vector(output_dir, "all")
+    chunks = divide_into_chunks(blocks_count)
+    for index, (block_start, block_end) in enumerate(chunks):
+        gdf = None
+        for ind, domain in enumerate(["all", "plantation"]):
+            join_boundaries_for_domain(output_dir, index, block_start, block_end, domain)
+            gdf_new = gpd.read_file(output_dir+"/"+domain+"_" +str(index)+".shp")
+            if ind==0:
+                gdf = gdf_new
+            else:
+                gdf = pd.concat([gdf, gdf_new])
+        
+        gdf.to_file(output_dir+"/"+directory+"_boundaries_"+str(index)+".shp")
+        zip_vector(output_dir, directory+"_boundaries_"+str(index))
     with open(output_dir + "/all_done", "w") as f:
         f.write("all done")
     
@@ -698,7 +724,13 @@ def get_n_boxes(lat, lon, n, zoom, scale):
         lat, lon = new_lat_lon
     lats = [i[0] for i in diagonal_lat_lon]
     longs = [i[1] for i in diagonal_lat_lon]
-    return list(product(lats, longs))
+    first_points = list(product(lats, longs))
+    boxes = []
+    for point in first_points:
+        lat, lon = point
+        new_lat, new_lon = lat_lon_from_pixel(lat, lon, zoom, scale)
+        boxes.append([(lat, lon), (lat, new_lon), (new_lat, new_lon), (new_lat, lon)])
+    return boxes
 
 def latlon_to_tile_xy(lat, lon, zoom):
     """Converts lat/lon to tile x/y at given zoom level"""
@@ -717,50 +749,10 @@ def tile_xy_to_latlon(tile_x, tile_y, zoom):
     return lat_deg, lon_deg
 
 def get_points(roi, directory):
-    points_file = Path(directory + "/status.csv")
-    if points_file.is_file():
-        df = pd.read_csv(directory + "/status.csv", index_col=False)
-        df["points"] = df['points'].apply(ast.literal_eval)
-        return df
-    zoom = 17
-    scale = 16
-    bounds = roi.bounds().coordinates().get(0).getInfo()
-    lons = sorted([i[0] for i in bounds])
-    lats = sorted([i[1] for i in bounds])
-    
-    tile_x, tile_y = latlon_to_tile_xy(lats[-1], lons[0], zoom)
-    top_left_lat, top_left_lon = tile_xy_to_latlon(tile_x, tile_y, zoom)
-    
-    starting_point = top_left_lat, top_left_lon
-    min_, max_ = (
-        [lon_to_pixel_x(top_left_lon, zoom), lat_to_pixel_y(lats[0], zoom) ],
-        [lon_to_pixel_x(lons[-1], zoom), lat_to_pixel_y(top_left_lat, zoom)]
-        )
-    iterations = math.ceil(max(abs(min_[0] -  max_[0]), abs(min_[1] - max_[1]))/256/16)
-    points = get_n_boxes(starting_point[0], starting_point[1], iterations, zoom, scale)
-    intersect_list = []
-    print(len(points))
-    index = 0
-    for point in points:
-        top_left = point
-        bottom_right = lat_lon_from_pixel(top_left[0], top_left[1], zoom, scale)
-        rectangle = ee.Geometry.Rectangle([(top_left[1], top_left[0]), (bottom_right[1], bottom_right[0])])
-        print(top_left, bottom_right)
-        intersects = roi.geometry().intersects(rectangle, ee.ErrorMargin(1)).getInfo()
-        if intersects:
-            intersect_list.append((index, (top_left,bottom_right)))
-            index+=1
-        print(intersects)
-    df = pd.DataFrame(intersect_list, columns=["index", "points"])
-    df["overall_status"] = False
-    df["download_status"] = False
-    df["model_status"] = False
-    df["segmentation_status"] = False
-    df["postprocessing_status"] = False
-    df["plantation_status"] = False
-    df.to_csv(directory + "/status.csv", index=False)
+    df = pd.read_csv(directory + "/status.csv", index_col=False)
+    df["points"] = df['points'].apply(ast.literal_eval)
     return df
-
+    
 def process_image(image_path, model, conf_thresholds, class_names):
     img = cv2.imread(image_path)
     if img is None:
@@ -846,6 +838,218 @@ def mark_done(index, output_dir, df, label):
     df.loc[df['index'] == index, label] = True
     df.to_csv(output_dir + "/status.csv", index=False)
 
+def get_csv(points):
+    first_points = [i[0] for i in points]
+    tiles = []
+    for index, point in enumerate(first_points):
+        four_first_point = get_n_boxes(point[0], point[1], 1, 17, 16)
+        four_first_point = [(i[0], i[2]) for i in four_first_point]
+        for top_left, bottom_right in four_first_point:
+            tiles.append((index, (top_left,bottom_right)))
+    return tiles
+
+def get_tiles(roi):
+    zoom = 17
+    scale = 32
+    bounds = roi.bounds().coordinates().get(0).getInfo()
+    lons = sorted([i[0] for i in bounds])
+    lats = sorted([i[1] for i in bounds])
+    
+    tile_x, tile_y = latlon_to_tile_xy(lats[-1], lons[0], zoom)
+    top_left_lat, top_left_lon = tile_xy_to_latlon(tile_x, tile_y, zoom)
+    
+    starting_point = top_left_lat, top_left_lon
+    min_, max_ = (
+        [lon_to_pixel_x(top_left_lon, zoom), lat_to_pixel_y(lats[0], zoom) ],
+        [lon_to_pixel_x(lons[-1], zoom), lat_to_pixel_y(top_left_lat, zoom)]
+        )
+    iterations = math.ceil(max(abs(min_[0] -  max_[0]), abs(min_[1] - max_[1]))/256/scale)
+    tiles = get_n_boxes(starting_point[0], starting_point[1], iterations, zoom, scale)
+    points = get_csv(tiles)
+    features = []
+    for i, tile in enumerate(tiles):
+        coords = [[lon, lat] for lat, lon in tile]  # Convert to [lon, lat]
+        #coords.append(coords[0])  # Close the polygon
+        polygon = ee.Geometry.Polygon([coords])
+        feature = ee.Feature(polygon, {'grid_id': i})
+        features.append(feature)
+    tiles = ee.FeatureCollection(features)
+    return tiles, points
+
+def write_to_gee(fc, asset_name):
+    task = ee.batch.Export.table.toAsset(
+        collection=fc.filterBounds(roi),
+        description='exportToTableAssetExample',
+        assetId=asset_name,
+    )
+    task.start()
+    print(f"Started export to GEE asset: {asset_name}")
+    while True:
+        status = task.status()
+        state = status.get('state', 'UNKNOWN')
+        print(f"Export status: {state}")
+        if state in ['COMPLETED', 'FAILED', 'CANCELLED']:
+            break
+        time.sleep(30)
+    if state == 'COMPLETED':
+        print(f"Export to GEE asset {asset_name} completed successfully.")
+    else:
+        print(f"Export to GEE asset {asset_name} failed with status: {state}")
+
+def write_to_drive(fc, folder_name, file_name):
+    task = ee.batch.Export.table.toDrive(
+        collection=fc.filterBounds(roi),
+        description='exportToDriveTableExample',
+        folder=folder_name,
+        fileNamePrefix=file_name,
+        fileFormat='CSV'
+    )
+    task.start()
+    print(f"Started export to Google Drive: {folder_name}/{file_name}")
+    while True:
+        status = task.status()
+        state = status.get('state', 'UNKNOWN')
+        print(f"Export status: {state}")
+        if state in ['COMPLETED', 'FAILED', 'CANCELLED']:
+            break
+        time.sleep(30)
+    if state == 'COMPLETED':
+        print(f"Export to Google Drive {folder_name}/{file_name}.csv completed successfully.")
+    else:
+        print(f"Export to Google Drive {folder_name}/{file_name}.csv failed with status: {state}")
+        
+def get_prev_and_curr_year_dates():
+    """Returns start_date (first day of previous year) and end_date (first day of current year) as strings."""
+    now = datetime.now()
+    curr_year = now.year
+    start_date = f"{curr_year-1}-01-01"
+    end_date = f"{curr_year}-01-01"
+    return start_date, end_date
+ 
+
+def get_histogram(roi, tiles_path):
+    start_date, end_date = get_prev_and_curr_year_dates()
+    tiles = ee.FeatureCollection(tiles_path)
+    lulc = ee.Image("projects/corestack-datasets/assets/datasets/LULC_v3_river_basin/pan_india_lulc_v3_2023_2024")
+    green = lulc.gte(6).And(lulc.lte(12))
+    emb = ee.ImageCollection("GOOGLE/SATELLITE_EMBEDDING/V1/ANNUAL").filterDate(start_date, end_date).filterBounds(roi).mosaic().updateMask(green)
+
+    # KMeans clustering as before
+    samples = emb.sample(
+        region=roi,
+        scale=10,
+        numPixels=50000
+    )
+    clusterer = ee.Clusterer.wekaKMeans(32).train(samples)
+    clusters = emb.cluster(clusterer)
+
+    # Use reduceRegions for efficiency
+    tiles_with_hist = clusters.reduceRegions(
+        collection=tiles,
+        reducer=ee.Reducer.frequencyHistogram(),
+        scale=10,
+        crs=None,
+        crsTransform=None,
+        tileScale=2  # Increase tileScale if you still hit memory issues
+    )
+    return tiles_with_hist
+
+def get_representative_tiles(directory):
+    #this code first download csv from google drive as a df
+    gauth = GoogleAuth()
+    # Ensure you have client_secrets.json in the working directory.
+    gauth.LoadClientConfigFile("client_secrets.json")
+
+    gauth.LoadCredentialsFile("credentials.json")
+
+    if gauth.credentials is None:
+        # First run: open browser, ask once
+        gauth.CommandLineAuth()
+    elif gauth.access_token_expired:
+        # Auto-refresh using the refresh token
+        gauth.Refresh()
+    else:
+        gauth.Authorize()
+    
+    drive = GoogleDrive(gauth)
+    file_id = file_list = drive.ListFile({'q': f"title = '{directory}_tiles_with_hist.csv' and trashed=false"}).GetList()[0]["id"]
+    gfile = drive.CreateFile({'id': file_id})
+    gfile.GetContentFile(directory + '/histogram_data.csv')  # downloads to local file
+
+    df = pd.read_csv('histogram_data.csv')
+    # Convert histograms into aligned probability vectors
+    all_keys = set()
+    print(df)
+    for h in df['histogram']:
+        hist_dict = ast.literal_eval(h.replace("=", ":"))
+        all_keys.update(hist_dict.keys())
+
+    all_keys = sorted([int(k) for k in all_keys])
+    K = len(all_keys)
+
+    def normalize(hist_dict):
+        vec = np.array([hist_dict.get(k, 0) for k in all_keys])
+        if vec.sum() == 0:
+            return np.zeros_like(vec)
+        return vec / vec.sum()
+
+    df['vector'] = df['histogram'].apply(lambda h: normalize(eval(h.replace("=", ":"))))
+
+    # Compute full area distribution
+    full_dist = df['vector'].sum()
+    full_dist = full_dist / full_dist.sum()
+
+    # Greedy selection
+    selected = []
+    remaining = df.index.tolist()
+    p = 60
+
+    for _ in range(p):
+        best_score = float('inf')
+        best_idx = None
+
+        for idx in remaining:
+            subset = selected + [idx]
+            combined = df.loc[subset, 'vector'].sum()
+            combined = combined / combined.sum()
+
+            score = jensenshannon(combined, full_dist)
+            if score < best_score:
+                best_score = score
+                best_idx = idx
+
+        selected.append(best_idx)
+        remaining.remove(best_idx)
+    representative_tiles = [i for i in list(df.loc[selected]["grid_id"])]
+    df_points = pd.read_csv(directory + "/points.csv")
+    df_points = df_points[df_points["index"].isin(representative_tiles)].reset_index(drop=True)
+    df_points["index"] = range(len(df_points))
+    df_points["overall_status"] = False
+    df_points["download_status"] = False
+    df_points["model_status"] = False
+    df_points["segmentation_status"] = False
+    df_points["postprocessing_status"] = False
+    df_points["plantation_status"] = False
+    df_points.to_csv(directory + "/status.csv", index=False)
+        
+def pre_process(roi, directory):
+    # Add any pre-processing steps here
+    tiles_path = 'projects/raman-461708/assets/' + directory + "_tiles"
+    hist_tile_drive_path = "Scrubland_Field_Delineation/" + directory 
+    print("Getting Tiles")
+    
+    #tiles, points = get_tiles(roi)
+    #df = pd.DataFrame(points, columns=["index", "points"])
+    #df.to_csv(directory + "/points.csv", index=False)
+    #print("Saving Tiles")
+    #write_to_gee(tiles, tiles_path)
+    #print("Doing K-means clustering and computing Histogram")
+    #tiles_with_hist = get_histogram(roi, tiles_path)
+    #print("Saving histogram")
+    #write_to_drive(tiles_with_hist, hist_tile_drive_path, directory + "_tiles_with_hist")
+    #print("Pulling data from drive and getting representative tiles and saving then to status.csv for local compute")
+    get_representative_tiles(directory)
+
 
 def run(roi, directory, max_tries=5, delay=1):
     attempt = 0
@@ -856,13 +1060,13 @@ def run(roi, directory, max_tries=5, delay=1):
             for _, row in blocks_df[blocks_df["overall_status"]==False].iterrows():
                 index = row["index"]
                 point = row["points"]
-                
                 #import ipdb
                 #ipdb.set_trace()
                 output_dir = directory + "/" + str(index)
-                download(point, output_dir, row, index, directory, blocks_df)
-                run_model(output_dir, row, index, directory, blocks_df)
-                get_segmentation(output_dir, row, index, directory, blocks_df)
+                #download(point, output_dir, row, index, directory, blocks_df)
+                print(index, point) 
+                #run_model(output_dir, row, index, directory, blocks_df)
+                #get_segmentation(output_dir, row, index, directory, blocks_df)
                 run_postprocessing(output_dir, row, index, directory, blocks_df)
                 run_plantation_model(output_dir, row, index, directory, blocks_df)
                 mark_done(index, directory, blocks_df, "overall_status")
@@ -879,32 +1083,34 @@ def run(roi, directory, max_tries=5, delay=1):
                 
 
 if __name__ == "__main__":
-    
-    ee.Authenticate() 
-    ee.Initialize(project='ee-raman')
-    # Set ROI and directory name below
-    #roi = ee.FeatureCollection("users/mtpictd/india_block_boundaries").filter(ee.Filter.eq("block", "Peddapally"))
-    roi = False
-    directory = "AEZ_7"
 
-    #Boiler plate code to run for a rectangle
-    
-    #top_left = [19.26903317, 80.86453702]  # Replace lon1 and lat1 with actual values
-    #bottom_right = [19.24167092, 80.89408520]  # Replace lon2 and lat2 with actual values   
-    #directory = "Area_tm"
-    
-    # Create a rectangle geometry using the defined corners
-    #rectangle = ee.Geometry.Rectangle([top_left[1], bottom_right[0], bottom_right[1], top_left[0]])
-    # Create a feature collection with the rectangle as a boundary
-    #roi = ee.FeatureCollection([ee.Feature(rectangle)])
-    
-    os.makedirs(directory, exist_ok=True)
-    sys.stdout = Logger(directory + "/output.log")
-    #print("Area of the Rectangle is ", roi.geometry().area().getInfo()/1e6)
-    
-    
-    
-    #print("Running for " + str(len(blocks_df)) + " points...")
-    
-    run(roi, directory)
-    
+    ee.Authenticate() 
+    ee.Initialize(project='raman-461708')
+    # Set ROI and directory name below
+    for i in  [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19]:
+        AEZ_no = i
+        roi = ee.FeatureCollection("users/mtpictd/agro_eco_regions").filter(ee.Filter.eq("ae_regcode", AEZ_no))
+        directory = "AEZ_" + str(AEZ_no)
+
+        
+        #Boiler plate code to run for a rectangle
+        
+        #top_left = [19.26903317, 80.86453702]  # Replace lon1 and lat1 with actual values
+        #bottom_right = [19.24167092, 80.89408520]  # Replace lon2 and lat2 with actual values   
+        #directory = "Area_tm"
+        
+        # Create a rectangle geometry using the defined corners
+        #rectangle = ee.Geometry.Rectangle([top_left[1], bottom_right[0], bottom_right[1], top_left[0]])
+        # Create a feature collection with the rectangle as a boundary
+        #roi = ee.FeatureCollection([ee.Feature(rectangle)])
+        
+        os.makedirs(directory, exist_ok=True)
+        #sys.stdout = Logger(directory + "/output.log")
+        #print("Area of the Rectangle is ", roi.geometry().area().getInfo()/1e6)
+        #pre_process(roi, directory)
+        
+        
+        #print("Running for " + str(len(blocks_df)) + " points...")
+        
+        run(roi, directory)
+
