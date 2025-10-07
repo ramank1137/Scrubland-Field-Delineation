@@ -1,0 +1,12 @@
+python sample_local_workers.py 8
+python sample_local_workers.py 9
+python sample_local_workers.py 10
+python sample_local_workers.py 11
+python sample_local_workers.py 12
+python sample_local_workers.py 13
+python sample_local_workers.py 14
+python sample_local_workers.py 15
+python sample_local_workers.py 16
+python sample_local_workers.py 17
+python sample_local_workers.py 18
+python sample_local_workers.py 19
