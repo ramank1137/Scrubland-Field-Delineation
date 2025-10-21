@@ -166,7 +166,7 @@ def load_model():
     n_classes = 1
     ctx_name = 'gpu'
     gpu_id = 0
-    trained_model='india_Airbus_SPOT_model.params'
+    trained_model='models/india_Airbus_SPOT_model.params'
     if ctx_name == 'cpu':
         ctx = mx.cpu()
     elif ctx_name == 'gpu':
@@ -827,7 +827,7 @@ def stitch_masks(masks, output_dir):
 def run_plantation_model(output_dir, row, index, directory, blocks_df):
     if row["plantation_status"] == True:
         return
-    model_path = "plantation_model.pt"
+    model_path = "models/plantation_model.pt"
     conf_thresholds = {
         'plantations': 0.5,
     }
@@ -890,7 +890,7 @@ def run(roi, directory, max_tries=5, delay=1):
 if __name__ == "__main__":
     
     ee.Authenticate() 
-    ee.Initialize(project='ee-raman')
+    ee.Initialize(project='raman-461708')
     # Set ROI and directory name below
     roi = ee.FeatureCollection("projects/ee-corestackdev/assets/apps/mws/karnataka/chik_ballapur/chintamani/filtered_mws_chik_ballapur_chintamani_uid")
     #roi = False
