@@ -39,6 +39,7 @@ body:
       value: |
         ### 3) Region of Interest (ROI)
         Please define your ROI using **either** a bounding box **or** by attaching a shapefile.
+        - **To use a geojson :** Add the geojson in the tab after selecting year.
         - **To use a shapefile :** Zip your `.shp`, `.dbf`, `.prj`, `.cpg`, `.shx`, and other necessary files into a single `.zip` file. Attach it to this issue by dragging and dropping it into the text area below.
         - **To use a bounding box:** Fill in the four coordinates below. These fields are not required if you are attaching a shapefile.
 
@@ -60,6 +61,17 @@ body:
     validations:
       required: false
 
+  - type: textarea
+    id: geojson
+    attributes:
+      label: "Bounding Box GeoJSON (Optional)"
+      description: "Paste a GeoJSON Feature/Polygon if available."
+      placeholder: |
+        {
+          \"type\": \"Polygon\",
+          \"coordinates\": [[[77.1, 28.9], [77.3, 28.9], [77.3, 28.8], [77.1, 28.8], [77.1, 28.9]]]
+        }
+        
   - type: dropdown
     id: years
     attributes:
@@ -78,17 +90,6 @@ body:
         - "2025"
     validations:
       required: true
-
-  - type: textarea
-    id: geojson
-    attributes:
-      label: "Bounding Box GeoJSON (Optional)"
-      description: "Paste a GeoJSON Feature/Polygon if available."
-      placeholder: |
-        {
-          \"type\": \"Polygon\",
-          \"coordinates\": [[[77.1, 28.9], [77.3, 28.9], [77.3, 28.8], [77.1, 28.8], [77.1, 28.9]]]
-        }
 
   - type: dropdown
     id: issue_type
