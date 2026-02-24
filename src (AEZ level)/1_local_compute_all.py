@@ -1045,16 +1045,16 @@ def pre_process(roi, directory):
     hist_tile_drive_path = "Scrubland_Field_Delineation/" + directory 
     print("Getting Tiles")
     
-    #tiles, points = get_tiles(roi)
-    #df = pd.DataFrame(points, columns=["index", "points"])
-    #df.to_csv(directory + "/points.csv", index=False)
-    #print("Saving Tiles")
-    #write_to_gee(tiles, tiles_path)
-    #print("Doing K-means clustering and computing Histogram")
-    #tiles_with_hist = get_histogram(roi, tiles_path)
-    #print("Saving histogram")
-    #write_to_drive(tiles_with_hist, hist_tile_drive_path, directory + "_tiles_with_hist")
-    #print("Pulling data from drive and getting representative tiles and saving then to status.csv for local compute")
+    tiles, points = get_tiles(roi)
+    df = pd.DataFrame(points, columns=["index", "points"])
+    df.to_csv(directory + "/points.csv", index=False)
+    print("Saving Tiles")
+    write_to_gee(tiles, tiles_path)
+    print("Doing K-means clustering and computing Histogram")
+    tiles_with_hist = get_histogram(roi, tiles_path)
+    print("Saving histogram")
+    write_to_drive(tiles_with_hist, hist_tile_drive_path, directory + "_tiles_with_hist")
+    print("Pulling data from drive and getting representative tiles and saving then to status.csv for local compute")
     get_representative_tiles(directory)
 
 

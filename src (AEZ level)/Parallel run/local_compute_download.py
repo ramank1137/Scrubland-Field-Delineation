@@ -5,17 +5,17 @@ import re
 from multiprocessing import cpu_count
 from glob import glob
 from pathlib import Path
-from mxnet import gluon
-from mxnet import image
-from skimage import measure
+#from mxnet import gluon
+#from mxnet import image
+#from skimage import measure
 import pickle
-from commons import tms_to_geotiff
+#from commons import tms_to_geotiff
 import math
-from datasets import *
+#from datasets import *
 from itertools import product
 import ee
 import geopandas as gpd
-from ultralytics import YOLO
+#from ultralytics import YOLO
 import ast
 import time
 PIL.Image.MAX_IMAGE_PIXELS = 2000000000
@@ -24,28 +24,29 @@ module_paths=['decode/FracTAL_ResUNet/models/semanticsegmentation', 'decode/Frac
 for module_path in module_paths:
     if module_path not in sys.path:
         sys.path.append(module_path)
-from FracTAL_ResUNet import FracTAL_ResUNet_cmtsk
-from datasets import *
-from instance_segment import InstSegm
-from skimage import data
-from skimage.filters.rank import entropy
-from skimage.morphology import disk, ball
+#from FracTAL_ResUNet import FracTAL_ResUNet_cmtsk
+#from datasets import *
+#from instance_segment import InstSegm
+#from skimage import data
+#from skimage.filters.rank import entropy
+#from skimage.morphology import disk, ball
 import multiprocessing as mp
-from skimage.restoration import (
-    denoise_tv_chambolle,
-    denoise_bilateral,
-    denoise_wavelet,
-    estimate_sigma,
-)
-from osgeo import gdal, ogr, osr
-from commons import raster_to_shp
+#from skimage.restoration import (
+#    denoise_tv_chambolle,
+#    denoise_bilateral,
+#    denoise_wavelet,
+#    estimate_sigma,
+#)
+#from osgeo import gdal, ogr, osr
+#from commons import raster_to_shp
 import zipfile
 import pandas as pd
 from itertools import combinations
 from datetime import datetime
 from scipy.spatial.distance import jensenshannon
-from pydrive2.auth import GoogleAuth
-from pydrive2.drive import GoogleDrive
+#from pydrive2.auth import GoogleAuth
+#from pydrive2.drive import GoogleDrive
+import numpy as np
 
 
 original_image, min_j, min_i, max_j, max_i, instances_predicted = (0,0,0,0,0,0)
@@ -821,7 +822,7 @@ def run_plantation_model(output_dir, row, index, directory, blocks_df):
     mark_done(index, directory, blocks_df, "plantation_status")
     return
 
-from filelock import FileLock
+#from filelock import FileLock
 
 def mark_done(index, output_dir, label):
     csv_path  = os.path.join(output_dir, "status.csv")
@@ -1045,8 +1046,7 @@ def get_representative_tiles(directory):
             print(f"Downloading {file['title']}")
             file.GetContentFile(os.path.join(local_folder, file['title']))
     """
-    csv_files = glob('AEZ_'+str(AEZ_no)+'/Samples/AEZ_'+str(AEZ_no)+'_tiles_with_hist_*.csv')
-    
+    csv_files = glob('../../data/data_AEZ/AEZ_'+str(AEZ_no)+'/Samples/AEZ_'+str(AEZ_no)+'_tiles_with_hist_*.csv')
     df_list = []
     try:
         for i in range(len(csv_files)):
@@ -1109,6 +1109,9 @@ def get_representative_tiles(directory):
         selected.append(best_idx)
         remaining.remove(best_idx)
     representative_tiles = [i for i in list(df.loc[selected]["grid_id"])]
+    df_tiles = pd.DataFrame(representative_tiles, columns=["tile_no"])
+    df_tiles.to_csv("../../data/data_AEZ/AEZ_"+str(AEZ_no)+"_representative_tiles.csv", index=False)
+    return
     df_points = pd.read_csv(directory + "/points.csv")
     df_points = df_points[df_points["index"].isin(representative_tiles)].reset_index(drop=True)
     df_points["index"] = range(len(df_points))
@@ -1178,7 +1181,7 @@ if __name__ == "__main__":
     ee.Authenticate() 
     ee.Initialize(project='raman-461708')
     # Set ROI and directory name below
-    for i in  [7,6]:
+    for i in  [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19]:
         print("Running for AEZ number ", i)
         AEZ_no = i
         roi = ee.FeatureCollection("users/mtpictd/agro_eco_regions").filter(ee.Filter.eq("ae_regcode", AEZ_no))
@@ -1199,10 +1202,10 @@ if __name__ == "__main__":
         os.makedirs(directory, exist_ok=True)
         #sys.stdout = Logger(directory + "/output.log")
         #print("Area of the Rectangle is ", roi.geometry().area().getInfo()/1e6)
-        #pre_process(roi, directory)
+        pre_process(roi, directory)
         
         
         #print("Running for " + str(len(blocks_df)) + " points...")
         
-        run(roi, directory)
+        #run(roi, directory)
 

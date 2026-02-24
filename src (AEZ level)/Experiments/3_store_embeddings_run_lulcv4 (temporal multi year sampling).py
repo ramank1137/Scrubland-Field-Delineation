@@ -1085,7 +1085,7 @@ def store_emb_and_generate_LULC(AEZ_no):
             )
             # Export this chunk
             asset_id = f"{asset_prefix}_emb_{index}"
-            write_to_gee(chunk_samples, asset_id)
+            #write_to_gee(chunk_samples, asset_id)
             assets.append(asset_id)
         return assets
     
@@ -1159,19 +1159,19 @@ def store_emb_and_generate_LULC(AEZ_no):
     sample_assets_2025 = export_samples_in_chunks(
         emb_2025,  # your image
         samples,  # your FeatureCollection
-        chunk_size=30000,  # adjust as needed (try 1000-10000)
+        chunk_size=20000,  # adjust as needed (try 1000-10000)
         asset_prefix=f'projects/raman-461708/assets/AEZ_{AEZ_no}_samples_from_local_2025'
     )
     sample_assets_2024 = export_samples_in_chunks(
         emb_2024,  # your image
         samples,  # your FeatureCollection
-        chunk_size=30000,  # adjust as needed (try 1000-10000)
+        chunk_size=20000,  # adjust as needed (try 1000-10000)
         asset_prefix=f'projects/raman-461708/assets/AEZ_{AEZ_no}_samples_from_local_2024'
     )
     sample_assets_2023 = export_samples_in_chunks(
         emb_2023,  # your image
         samples,  # your FeatureCollection
-        chunk_size=30000,  # adjust as needed (try 1000-10000)
+        chunk_size=20000,  # adjust as needed (try 1000-10000)
         asset_prefix=f'projects/raman-461708/assets/AEZ_{AEZ_no}_samples_from_local_2023'
     )
     sample_assets = sample_assets_2025 + sample_assets_2024 + sample_assets_2023
@@ -1186,8 +1186,10 @@ def store_emb_and_generate_LULC(AEZ_no):
         return all_samples 
 
     def get_classifier(bandnames, roi):
+        import ipdb
+        ipdb.set_trace()
         classifier = ee.Classifier.smileRandomForest(numberOfTrees=100, seed=42).train(
-            features=get_samples(roi),
+            features=get_samples(roi).limit(100000),
             classProperty='label',
             inputProperties=bandnames
         )
@@ -1272,14 +1274,14 @@ def store_emb_and_generate_LULC(AEZ_no):
             )
             task.start()
         return
-    if AEZ_no in [6,]:
+    if AEZ_no in [2,6]:
         parts_fc = split_roi(roi_boundary)
         part1 = parts_fc.filter(ee.Filter.eq('part', 1))
         part2 = parts_fc.filter(ee.Filter.eq('part', 2))
-        get_lulc(part1, "_part1")
+        #get_lulc(part1, "_part1")
         get_lulc(part2, "_part2")
     else:
         get_lulc(roi_boundary, "")
 
-for AEZ_no in [8]:
+for AEZ_no in [6]:
     store_emb_and_generate_LULC(AEZ_no)

@@ -166,7 +166,7 @@ def load_model():
     n_classes = 1
     ctx_name = 'gpu'
     gpu_id = 0
-    trained_model='india_Airbus_SPOT_model.params'
+    trained_model='../models/india_Airbus_SPOT_model.params'
     if ctx_name == 'cpu':
         ctx = mx.cpu()
     elif ctx_name == 'gpu':
@@ -827,7 +827,7 @@ def stitch_masks(masks, output_dir):
 def run_plantation_model(output_dir, row, index, directory, blocks_df):
     if row["plantation_status"] == True:
         return
-    model_path = "plantation_model.pt"
+    model_path = "../models/plantation_model.pt"
     conf_thresholds = {
         'plantations': 0.5,
     }
@@ -890,22 +890,22 @@ def run(roi, directory, max_tries=5, delay=1):
 if __name__ == "__main__":
     
     ee.Authenticate() 
-    ee.Initialize(project='ee-raman')
+    ee.Initialize(project='raman-461708')
     # Set ROI and directory name below
-    roi = ee.FeatureCollection("projects/ee-corestackdev/assets/apps/mws/karnataka/chik_ballapur/chintamani/filtered_mws_chik_ballapur_chintamani_uid")
+    #roi = ee.FeatureCollection("projects/ee-corestackdev/assets/apps/mws/karnataka/chik_ballapur/chintamani/filtered_mws_chik_ballapur_chintamani_uid")
     #roi = False
-    directory = "Area_chintamani"
 
     #Boiler plate code to run for a rectangle
     
-    #top_left = [19.26903317, 80.86453702]  # Replace lon1 and lat1 with actual values
-    #bottom_right = [19.24167092, 80.89408520]  # Replace lon2 and lat2 with actual values   
-    #directory = "Area_tm"
+    top_left = [14.01942232, 78.08797276]  # Replace lon1 and lat1 with actual values
+    
+    bottom_right = [13.92640287, 78.24419121]  # Replace lon2 and lat2 with actual values   
+    directory = "Area_UbiCherala"
     
     # Create a rectangle geometry using the defined corners
-    #rectangle = ee.Geometry.Rectangle([top_left[1], bottom_right[0], bottom_right[1], top_left[0]])
+    rectangle = ee.Geometry.Rectangle([top_left[1], bottom_right[0], bottom_right[1], top_left[0]])
     # Create a feature collection with the rectangle as a boundary
-    #roi = ee.FeatureCollection([ee.Feature(rectangle)])
+    roi = ee.FeatureCollection([ee.Feature(rectangle)])
     
     os.makedirs(directory, exist_ok=True)
     sys.stdout = Logger(directory + "/output.log")
