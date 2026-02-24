@@ -39,8 +39,8 @@ body:
       value: |
         ### 3) Region of Interest (ROI)
         Please define your ROI using **either** a bounding box **or** by attaching a shapefile.
-        - **To use a geojson :** Attach it to this issue by dragging and dropping it into the text area below.
-        - **To use a shapefile :** Zip your `.shp`, `.dbf`, `.prj`, `.cpg`, `.shx`, and other necessary files into a single `.zip` file. Attach it to this issue by dragging and dropping it into the text area below.
+        - **To use a geojson :** Attach it to this issue by dragging and dropping it into the **Upload Bounding Box** below.
+        - **To use a shapefile :** Zip your `.shp`, `.dbf`, `.prj`, `.cpg`, `.shx`, and other necessary files into a single `.zip` file. Attach it to this issue by dragging and dropping it into the **Upload Bounding Box** below.
         - **To use a bounding box:** Fill in the four coordinates below. These fields are not required if you are attaching a shapefile.
 
   - type: input
@@ -64,7 +64,7 @@ body:
   - type: textarea
     id: geojson
     attributes:
-      label: "Bounding Box GeoJSON (Optional)"
+      label: "Upload Bounding Box (Optional)"
       description: "Paste a GeoJSON Feature/Polygon if available."
       placeholder: |
         {
