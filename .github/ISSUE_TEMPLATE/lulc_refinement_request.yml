@@ -1,0 +1,130 @@
+name: "LULC Refinement Request"
+description: "Report incorrect LULC classification or request refinement for a specific bounding box."
+title: "[LULC Refinement] <short description>"
+labels:
+  - lulc
+  - refinement
+  - data-quality
+assignees:
+  - ramank1137   # change to your GitHub username
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for helping refine the LULC dataset.  
+        Please fill the details below to report an incorrect classification  
+        or request refinement for a specific bounding box.
+
+  - type: input
+    id: org
+    attributes:
+      label: 1) Your organization
+      description: State your organization
+      placeholder: e.g., Indian Institute of Delhi / CoreStack / <Company>
+    validations:
+      required: true
+
+  - type: textarea
+    id: purpose
+    attributes:
+      label: 2) Intended use
+      description: Briefly describe how you plan to use IndiaSat v4 LULC
+      placeholder: e.g., For identifying restoration sites
+    validations:
+      required: true
+
+  - type: markdown
+    attributes:
+      value: |
+        ### 3) Region of Interest (ROI)
+        Please define your ROI using **either** a bounding box **or** by attaching a shapefile.
+        - **To use a shapefile :** Zip your `.shp`, `.dbf`, `.prj`, `.cpg`, `.shx`, and other necessary files into a single `.zip` file. Attach it to this issue by dragging and dropping it into the text area below.
+        - **To use a bounding box:** Fill in the four coordinates below. These fields are not required if you are attaching a shapefile.
+
+  - type: input
+    id: roi_left
+    attributes:
+      label: Bounding Box - Top Left (lon,lat)
+      description: Required if not attaching a shapefile.
+      placeholder: "e.g., 77.68867639, 10.82116416"
+    validations:
+      required: false
+
+  - type: input
+    id: roi_bottom
+    attributes:
+      label: Bounding Box - Bottom Right (lon,lat)
+      description: Required if not attaching a shapefile.
+      placeholder: "e.g., 78.01980731, 10.43529696"
+    validations:
+      required: false
+
+  - type: dropdown
+    id: years
+    attributes:
+      label: 4) Years (multi-select)
+      description: Choose one or more years between 2017–2025.
+      multiple: true
+      options:
+        - "2017"
+        - "2018"
+        - "2019"
+        - "2020"
+        - "2021"
+        - "2022"
+        - "2023"
+        - "2024"
+        - "2025"
+    validations:
+      required: true
+
+  - type: textarea
+    id: geojson
+    attributes:
+      label: "Bounding Box GeoJSON (Optional)"
+      description: "Paste a GeoJSON Feature/Polygon if available."
+      placeholder: |
+        {
+          \"type\": \"Polygon\",
+          \"coordinates\": [[[77.1, 28.9], [77.3, 28.9], [77.3, 28.8], [77.1, 28.8], [77.1, 28.9]]]
+        }
+
+  - type: dropdown
+    id: issue_type
+    attributes:
+      label: "Issue Type"
+      multiple: true
+      options:
+        - "Plantation detection missing/incorrect"
+        - "Cropland vs scrubland misclassified"
+        - "Temporaly incorrect classification"
+        - "Incorrect other LULC classes (urban, water, tree)"
+        - "Other"
+    validations:
+      required: true
+
+  - type: textarea
+    id: evidence
+    attributes:
+      label: "Evidence or References (Optional)"
+      description: "Screenshots, field photos, Google Maps links, Sentinel imagery, etc."
+
+  - type: input
+    id: observation_date
+    attributes:
+      label: "Date of Observation (Optional)"
+      placeholder: "e.g., January 2026"
+
+  - type: textarea
+    id: context
+    attributes:
+      label: "Additional Context"
+      description: "Describe anything else that helps refine the LULC classification."
+
+  - type: markdown
+    attributes:
+      value: |
+        ---
+        **Thank you for helping improve the national-scale LULC dataset.**  
+        Your feedback directly contributes to better training, validation, and model performance.
