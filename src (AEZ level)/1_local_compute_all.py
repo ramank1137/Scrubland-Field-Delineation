@@ -1068,16 +1068,14 @@ def run(roi, directory, max_tries=5, delay=1):
                 print("Working on AEZ" + directory + " point " + str(r_i))
                 index = row["index"]
                 point = row["points"]
-                #import ipdb
-                #ipdb.set_trace()
                 output_dir = directory + "/" + str(index)
-                #download(point, output_dir, row, index, directory, blocks_df)
+                download(point, output_dir, row, index, directory, blocks_df)
                 print(index, point) 
-                #run_model(output_dir, row, index, directory, blocks_df)
-                #get_segmentation(output_dir, row, index, directory, blocks_df)
-                #run_postprocessing(output_dir, row, index, directory, blocks_df)
-                #run_plantation_model(output_dir, row, index, directory, blocks_df)
-                #mark_done(index, directory, "overall_status")
+                run_model(output_dir, row, index, directory, blocks_df)
+                get_segmentation(output_dir, row, index, directory, blocks_df)
+                run_postprocessing(output_dir, row, index, directory, blocks_df)
+                run_plantation_model(output_dir, row, index, directory, blocks_df)
+                mark_done(index, directory, "overall_status")
                 attempt = 0
             print("Working on " + directory)
             join_boundaries(directory, len(blocks_df))
@@ -1117,10 +1115,10 @@ if __name__ == "__main__":
         os.makedirs(directory, exist_ok=True)
         #sys.stdout = Logger(directory + "/output.log")
         #print("Area of the Rectangle is ", roi.geometry().area().getInfo()/1e6)
-        #pre_process(roi, directory)
+        pre_process(roi, directory)
         
         
-        #print("Running for " + str(len(blocks_df)) + " points...")
+        print("Running for " + str(len(blocks_df)) + " points...")
         
         run(roi, directory)
 
