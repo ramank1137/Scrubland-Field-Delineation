@@ -40,4 +40,5 @@ You can set the ROI inside the `script.py` after `ee.Initialize` in `__main__` b
 | GEE Script 3 | Temporal multi-year sampling and classifier training | [View](./docs/IMPLEMENTATION_DETAILS_GEE_SCRIPT_3.md) |
 | Farm–Plantation Boundary Classification | Cleans and exports farm and plantation polygons | [View](./docs/FARM_PLANTATION_BOUNDARY_CLASSIFICATION.md) |
 | Boundary Generation (Block Level) | Block-level tile generation for ROI-based runs | [View](./docs/BOUNDARY_GENERATION_BLOCK_LEVEL.md) |
+| Adding new grids | Here we add new grids to generate data from those grids to improve the lulc further | [view](./docs/ADDING_NEW_GRIDS.md)|
 
