@@ -8,6 +8,8 @@ The process of adding new grids in the AEZ is to help the LULC pipeline download
 First step is to load the link:  
 https://raman-461708.projects.earthengine.app/view/tile-explorer
 
+![Application](../images/Overall%20App.png)
+
 This has the app where you can select the grids and it will give the `grid_ids` along with the AEZ no.
 
 To use it, first open the link. This will show the app interface.
@@ -17,6 +19,8 @@ To use it, first open the link. This will show the app interface.
 - You can switch on the LULC from the left pane if you want to see the LULC v4 underneath the grids.
 
 To select grids, you need to draw a rectangle on the area whose LULC is not accurate. When you draw the rectangle, it will select all the grids which intersect with the rectangle and show the grids in red.
+
+![Grids](../images/Selecting%20grid%20and%20lulc.png)
 
 On the left pane it will show the `grid_ids` along with the AEZ no.
 
@@ -37,7 +41,7 @@ The folder should also have `point.csv` which is created when you first execute 
 ## Step 3: Run the AEZ level processing script for selected grids
 
 Once you add the csv, you can run this script with changed parameters to only download and process the `grid_ids` selected.
-
+![Grids_without](../images/Selecting%20grids%20without%20lulc.png)
 Use this command to run on the `grid_ids`:
 
 ```bash
@@ -77,5 +81,4 @@ These samples can be used in the LULC creation to train better models with sampl
 ## Step 6: Create the LULC
 
 The last step is to to create the LULC, which I will explain further.
-
 
