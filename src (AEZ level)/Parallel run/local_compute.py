@@ -1,10 +1,30 @@
 import os, sys
+from pathlib import Path
+
+SCRIPT_DIR = Path(__file__).resolve().parent
+PROJECT_ROOT = SCRIPT_DIR
+while PROJECT_ROOT != PROJECT_ROOT.parent and not (PROJECT_ROOT / "commons.py").exists():
+    PROJECT_ROOT = PROJECT_ROOT.parent
+
+for search_path in (PROJECT_ROOT, SCRIPT_DIR):
+    search_path_str = str(search_path)
+    if search_path_str not in sys.path:
+        sys.path.insert(0, search_path_str)
+
+module_paths = [
+    PROJECT_ROOT / "decode/FracTAL_ResUNet/models/semanticsegmentation",
+    PROJECT_ROOT / "decode/FracTAL_ResUNet/nn/loss",
+]
+for module_path in module_paths:
+    module_path_str = str(module_path)
+    if module_path_str not in sys.path:
+        sys.path.append(module_path_str)
+
 from PIL import Image
 import PIL
 import re
 from multiprocessing import cpu_count
 from glob import glob
-from pathlib import Path
 from mxnet import gluon
 from mxnet import image
 from skimage import measure
@@ -19,11 +39,6 @@ from ultralytics import YOLO
 import ast
 import time
 PIL.Image.MAX_IMAGE_PIXELS = 2000000000
-
-module_paths=['decode/FracTAL_ResUNet/models/semanticsegmentation', 'decode/FracTAL_ResUNet/nn/loss']
-for module_path in module_paths:
-    if module_path not in sys.path:
-        sys.path.append(module_path)
 from FracTAL_ResUNet import FracTAL_ResUNet_cmtsk
 from datasets import *
 from instance_segment import InstSegm
@@ -1114,4 +1129,3 @@ if __name__ == "__main__":
         #print("Running for " + str(len(blocks_df)) + " points...")
         
         run(roi, directory)
-
