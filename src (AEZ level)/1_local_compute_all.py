@@ -1,10 +1,29 @@
 import os, sys
+import argparse
+from pathlib import Path
+
+SCRIPT_DIR = Path(__file__).resolve().parent
+PROJECT_ROOT = SCRIPT_DIR.parent
+
+for search_path in (PROJECT_ROOT, SCRIPT_DIR):
+    search_path_str = str(search_path)
+    if search_path_str not in sys.path:
+        sys.path.insert(0, search_path_str)
+
+module_paths = [
+    PROJECT_ROOT / "decode/FracTAL_ResUNet/models/semanticsegmentation",
+    PROJECT_ROOT / "decode/FracTAL_ResUNet/nn/loss",
+]
+for module_path in module_paths:
+    module_path_str = str(module_path)
+    if module_path_str not in sys.path:
+        sys.path.append(module_path_str)
+
 from PIL import Image
 import PIL
 import re
 from multiprocessing import cpu_count
 from glob import glob
-from pathlib import Path
 from mxnet import gluon
 from mxnet import image
 from skimage import measure
@@ -19,11 +38,6 @@ from ultralytics import YOLO
 import ast
 import time
 PIL.Image.MAX_IMAGE_PIXELS = 2000000000
-
-module_paths=['decode/FracTAL_ResUNet/models/semanticsegmentation', 'decode/FracTAL_ResUNet/nn/loss']
-for module_path in module_paths:
-    if module_path not in sys.path:
-        sys.path.append(module_path)
 from FracTAL_ResUNet import FracTAL_ResUNet_cmtsk
 from datasets import *
 from instance_segment import InstSegm
@@ -55,6 +69,19 @@ mapping = {
     "scrubland": 3,
     "rest": 0
 }
+
+STATUS_COLUMNS = [
+    "overall_status",
+    "download_status",
+    "model_status",
+    "segmentation_status",
+    "postprocessing_status",
+    "plantation_status",
+]
+
+MODEL_DIR = PROJECT_ROOT / "models"
+SEGMENTATION_MODEL_PATH = MODEL_DIR / "india_Airbus_SPOT_model.params"
+PLANTATION_MODEL_PATH = MODEL_DIR / "plantation_model.pt"
 
 class Logger:
     def __init__(self, filename):
@@ -171,7 +198,9 @@ def load_model():
     n_classes = 1
     ctx_name = 'gpu'
     gpu_id = 0
-    trained_model='india_Airbus_SPOT_model.params'
+    trained_model = SEGMENTATION_MODEL_PATH
+    if not trained_model.exists():
+        raise FileNotFoundError(f"Segmentation model not found: {trained_model}")
     if ctx_name == 'cpu':
         ctx = mx.cpu()
     elif ctx_name == 'gpu':
@@ -179,7 +208,7 @@ def load_model():
 
     # initialise model
     model = FracTAL_ResUNet_cmtsk(nfilters_init=n_filters, depth=depth, NClasses=n_classes)
-    model.load_parameters(trained_model, ctx=ctx)
+    model.load_parameters(str(trained_model), ctx=ctx)
     return model, ctx
 
 def run_inference(test_dataloader, model, ctx):
@@ -695,6 +724,7 @@ def join_boundaries(output_dir, blocks_count):
     if os.path.exists(output_dir + "/all_done"):
         print("Everything already done")
         return
+    output_name = os.path.basename(os.path.normpath(output_dir))
     chunks = divide_into_chunks(blocks_count)
     for index, (block_start, block_end) in enumerate(chunks):
         gdf = None
@@ -705,9 +735,8 @@ def join_boundaries(output_dir, blocks_count):
                 gdf = gdf_new
             else:
                 gdf = pd.concat([gdf, gdf_new])
-        
-        gdf.to_file(output_dir+"/"+directory+"_boundaries_"+str(index)+".shp")
-        zip_vector(output_dir, directory+"_boundaries_"+str(index))
+        gdf.to_file(output_dir+"/"+output_name+"_boundaries_"+str(index)+".shp")
+        zip_vector(output_dir, output_name+"_boundaries_"+str(index))
     with open(output_dir + "/all_done", "w") as f:
         f.write("all done")
     
@@ -810,14 +839,16 @@ def stitch_masks(masks, output_dir):
 def run_plantation_model(output_dir, row, index, directory, blocks_df):
     if row["plantation_status"] == True:
         return
-    model_path = "plantation_model.pt"
+    model_path = PLANTATION_MODEL_PATH
+    if not model_path.exists():
+        raise FileNotFoundError(f"Plantation model not found: {model_path}")
     conf_thresholds = {
         'plantations': 0.5,
     }
     class_names = [
         'plantations',
     ]
-    model = YOLO(model_path)
+    model = YOLO(str(model_path))
     gt_bound_names = glob(output_dir + "/chunks/*.tif")
     gt_bound_names = [i for i in gt_bound_names if "chunk_" in i]
     print('Found {} groundtruth chunks'.format(len(gt_bound_names)))
@@ -961,8 +992,76 @@ def get_histogram(roi, tiles_path):
     )
     return tiles_with_hist
 
+def initialize_status_dataframe(df_points):
+    df_status = df_points.reset_index(drop=True).copy()
+    df_status["index"] = range(len(df_status))
+    for column in STATUS_COLUMNS:
+        df_status[column] = False
+    return df_status
+
+def save_status_for_representative_tiles(directory, representative_tiles):
+    points_path = os.path.join(directory, "points.csv")
+    if not os.path.exists(points_path):
+        raise FileNotFoundError(f"Missing points file: {points_path}")
+
+    df_points = pd.read_csv(points_path)
+    if "index" not in df_points.columns:
+        raise ValueError(f"'index' column missing in {points_path}")
+
+    df_points["index"] = pd.to_numeric(df_points["index"], errors="coerce")
+    if df_points["index"].isna().any():
+        raise ValueError(f"Non-numeric values found in points index column at {points_path}")
+    df_points["index"] = df_points["index"].astype(int)
+
+    if not representative_tiles:
+        raise ValueError("No representative grid IDs were provided.")
+    representative_tiles = [int(grid_id) for grid_id in representative_tiles]
+
+    unique_available_ids = set(df_points["index"].tolist())
+    missing_ids = sorted(set(representative_tiles) - unique_available_ids)
+    if missing_ids:
+        print(f"Warning: these grid_ids were not found in points.csv and will be ignored: {missing_ids}")
+
+    filtered_points = df_points[df_points["index"].isin(representative_tiles)].reset_index(drop=True)
+    if filtered_points.empty:
+        raise ValueError("No matching rows found in points.csv for the supplied grid_ids.")
+
+    status_df = initialize_status_dataframe(filtered_points)
+    status_path = os.path.join(directory, "status.csv")
+    status_df.to_csv(status_path, index=False)
+    print(f"Saved status.csv with {len(status_df)} rows at {status_path}")
+
+def read_grid_ids(grid_file_path):
+    if not os.path.exists(grid_file_path):
+        raise FileNotFoundError(f"Grid ID file not found: {grid_file_path}")
+
+    grid_ids = []
+    with open(grid_file_path, "r") as file:
+        for line_no, raw_line in enumerate(file, start=1):
+            line = raw_line.strip()
+            if not line:
+                continue
+            tokens = [token.strip() for token in line.split(",") if token.strip()]
+            for token in tokens:
+                if token.lower() in {"grid_id", "grid_ids", "tile_no", "index"}:
+                    continue
+                try:
+                    grid_ids.append(int(float(token)))
+                except ValueError as exc:
+                    raise ValueError(
+                        f"Invalid grid_id '{token}' in {grid_file_path} at line {line_no}"
+                    ) from exc
+
+    if not grid_ids:
+        raise ValueError(f"No grid_ids found in {grid_file_path}")
+
+    # Preserve order while removing duplicates.
+    unique_grid_ids = list(dict.fromkeys(grid_ids))
+    return unique_grid_ids
+
 def get_representative_tiles(directory):
     #this code first download csv from google drive as a df
+    directory_name = os.path.basename(os.path.normpath(directory))
     gauth = GoogleAuth()
     # Ensure you have client_secrets.json in the working directory.
     gauth.LoadClientConfigFile("client_secrets.json")
@@ -979,11 +1078,17 @@ def get_representative_tiles(directory):
         gauth.Authorize()
     
     drive = GoogleDrive(gauth)
-    file_id = file_list = drive.ListFile({'q': f"title = '{directory}_tiles_with_hist.csv' and trashed=false"}).GetList()[0]["id"]
+    drive_files = drive.ListFile({'q': f"title = '{directory_name}_tiles_with_hist.csv' and trashed=false"}).GetList()
+    if not drive_files:
+        raise FileNotFoundError(
+            f"Could not find {directory_name}_tiles_with_hist.csv in Google Drive."
+        )
+    file_id = drive_files[0]["id"]
     gfile = drive.CreateFile({'id': file_id})
-    gfile.GetContentFile(directory + '/histogram_data.csv')  # downloads to local file
+    histogram_data_path = os.path.join(directory, "histogram_data.csv")
+    gfile.GetContentFile(histogram_data_path)  # downloads to local file
 
-    df = pd.read_csv('histogram_data.csv')
+    df = pd.read_csv(histogram_data_path)
     # Convert histograms into aligned probability vectors
     all_keys = set()
     print(df)
@@ -1027,22 +1132,14 @@ def get_representative_tiles(directory):
 
         selected.append(best_idx)
         remaining.remove(best_idx)
-    representative_tiles = [i for i in list(df.loc[selected]["grid_id"])]
-    df_points = pd.read_csv(directory + "/points.csv")
-    df_points = df_points[df_points["index"].isin(representative_tiles)].reset_index(drop=True)
-    df_points["index"] = range(len(df_points))
-    df_points["overall_status"] = False
-    df_points["download_status"] = False
-    df_points["model_status"] = False
-    df_points["segmentation_status"] = False
-    df_points["postprocessing_status"] = False
-    df_points["plantation_status"] = False
-    df_points.to_csv(directory + "/status.csv", index=False)
+    representative_tiles = [int(i) for i in list(df.loc[selected]["grid_id"])]
+    save_status_for_representative_tiles(directory, representative_tiles)
         
 def pre_process(roi, directory):
     # Add any pre-processing steps here
-    tiles_path = 'projects/raman-461708/assets/' + directory + "_tiles"
-    hist_tile_drive_path = "Scrubland_Field_Delineation/" + directory 
+    directory_name = os.path.basename(os.path.normpath(directory))
+    tiles_path = 'projects/raman-461708/assets/' + directory_name + "_tiles"
+    hist_tile_drive_path = "Scrubland_Field_Delineation/" + directory_name
     print("Getting Tiles")
     
     tiles, points = get_tiles(roi)
@@ -1053,9 +1150,87 @@ def pre_process(roi, directory):
     print("Doing K-means clustering and computing Histogram")
     tiles_with_hist = get_histogram(roi, tiles_path)
     print("Saving histogram")
-    write_to_drive(tiles_with_hist, hist_tile_drive_path, directory + "_tiles_with_hist")
+    write_to_drive(tiles_with_hist, hist_tile_drive_path, directory_name + "_tiles_with_hist")
     print("Pulling data from drive and getting representative tiles and saving then to status.csv for local compute")
     get_representative_tiles(directory)
+
+def pre_process_from_grid_file(directory, grid_file_path):
+    print(f"Preparing status.csv for {directory} from grid-id file: {grid_file_path}")
+    representative_tiles = read_grid_ids(grid_file_path)
+    print(f"Loaded {len(representative_tiles)} grid_ids from {grid_file_path}")
+    save_status_for_representative_tiles(directory, representative_tiles)
+
+def parse_int_list(values, field_name):
+    parsed_values = []
+    for value in values:
+        for token in str(value).split(","):
+            token = token.strip()
+            if not token:
+                continue
+            try:
+                parsed_values.append(int(token))
+            except ValueError as exc:
+                raise ValueError(f"Invalid integer '{token}' in {field_name}") from exc
+    if not parsed_values:
+        raise ValueError(f"No values provided for {field_name}")
+    return parsed_values
+
+def build_argument_parser():
+    parser = argparse.ArgumentParser(
+        description="Run AEZ-level local compute either for full AEZs or selected grid_ids in one AEZ."
+    )
+    subparsers = parser.add_subparsers(dest="mode", required=True)
+
+    aez_parser = subparsers.add_parser("aez", help="Run full AEZ preprocessing + run for one or more AEZs.")
+    aez_parser.add_argument(
+        "--aezs",
+        nargs="+",
+        required=True,
+        help="List of AEZ numbers. Supports space-separated or comma-separated values, e.g. --aezs 6 7 or --aezs 6,7",
+    )
+    aez_parser.add_argument(
+        "--base-dir",
+        default=".",
+        help="Base folder where AEZ_<no> directories are stored.",
+    )
+    aez_parser.add_argument(
+        "--skip-preprocess",
+        action="store_true",
+        help="Skip pre_process and directly run using existing status.csv.",
+    )
+    aez_parser.add_argument(
+        "--skip-run",
+        action="store_true",
+        help="Only run pre_process.",
+    )
+
+    grid_parser = subparsers.add_parser("grid", help="Run one AEZ using a custom grid-id file.")
+    grid_parser.add_argument("--aez", type=int, required=True, help="AEZ number.")
+    grid_parser.add_argument(
+        "--grid-file",
+        required=True,
+        help="Path to grid-id CSV/text file (for example: <AEZ_no>_grids.csv).",
+    )
+    grid_parser.add_argument(
+        "--base-dir",
+        default=".",
+        help="Base folder where AEZ_<no> directory is stored.",
+    )
+    grid_parser.add_argument(
+        "--skip-run",
+        action="store_true",
+        help="Only create status.csv from grid IDs.",
+    )
+    return parser
+
+def resolve_grid_file_path(grid_file, directory):
+    if os.path.isabs(grid_file):
+        return grid_file
+
+    local_candidate = os.path.join(directory, grid_file)
+    if os.path.exists(local_candidate):
+        return local_candidate
+    return grid_file
 
 
 def run(roi, directory, max_tries=5, delay=1):
@@ -1091,34 +1266,29 @@ def run(roi, directory, max_tries=5, delay=1):
                 
 
 if __name__ == "__main__":
+    parser = build_argument_parser()
+    args = parser.parse_args()
 
-    ee.Authenticate() 
-    ee.Initialize(project='raman-461708')
-    # Set ROI and directory name below
-    for i in  [6,7]:#,]:
-        AEZ_no = i
-        roi = ee.FeatureCollection("users/mtpictd/agro_eco_regions").filter(ee.Filter.eq("ae_regcode", AEZ_no))
-        directory = "AEZ_" + str(AEZ_no)
+    if args.mode == "aez":
+        aez_numbers = parse_int_list(args.aezs, "--aezs")
+        ee.Authenticate()
+        ee.Initialize(project='raman-461708')
 
-        
-        #Boiler plate code to run for a rectangle
-        
-        #top_left = [19.26903317, 80.86453702]  # Replace lon1 and lat1 with actual values
-        #bottom_right = [19.24167092, 80.89408520]  # Replace lon2 and lat2 with actual values   
-        #directory = "Area_tm"
-        
-        # Create a rectangle geometry using the defined corners
-        #rectangle = ee.Geometry.Rectangle([top_left[1], bottom_right[0], bottom_right[1], top_left[0]])
-        # Create a feature collection with the rectangle as a boundary
-        #roi = ee.FeatureCollection([ee.Feature(rectangle)])
-        
+        for aez_no in aez_numbers:
+            roi = ee.FeatureCollection("users/mtpictd/agro_eco_regions").filter(ee.Filter.eq("ae_regcode", aez_no))
+            directory = os.path.join(args.base_dir, f"AEZ_{aez_no}")
+            os.makedirs(directory, exist_ok=True)
+
+            if not args.skip_preprocess:
+                pre_process(roi, directory)
+            if not args.skip_run:
+                run(roi, directory)
+
+    elif args.mode == "grid":
+        directory = os.path.join(args.base_dir, f"AEZ_{args.aez}")
         os.makedirs(directory, exist_ok=True)
-        #sys.stdout = Logger(directory + "/output.log")
-        #print("Area of the Rectangle is ", roi.geometry().area().getInfo()/1e6)
-        pre_process(roi, directory)
-        
-        
-        print("Running for " + str(len(blocks_df)) + " points...")
-        
-        run(roi, directory)
 
+        grid_file_path = resolve_grid_file_path(args.grid_file, directory)
+        pre_process_from_grid_file(directory, grid_file_path)
+        if not args.skip_run:
+            run(None, directory)

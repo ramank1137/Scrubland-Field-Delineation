@@ -3,6 +3,7 @@ import ast
 import glob
 import math
 import random
+import argparse
 from pathlib import Path
 from typing import Iterable, List, Tuple, Optional
 
@@ -69,6 +70,8 @@ _BOUND_CRS = None
 
 # Where your AEZ boundary files are stored (can be a parent dir with subfolders)
 BOUNDARY_SEARCH_ROOT = ""   # e.g., "./assets" or "./AEZ_boundaries"
+# Where AEZ_<no>/status.csv and AEZ_<no>/samples live
+AEZ_DATA_ROOT = Path(".")
 # Pattern each AEZ will search for; will be combined with globbing extensions below
 BOUNDARY_NAME_PATTERN = "AEZ_{aez}_boundaries*"
 
@@ -100,6 +103,12 @@ TILE_INNER_BUFFER_M = 5.0
 # =======================
 # HELPERS
 # =======================
+
+def aez_dir(aez_no: int) -> Path:
+    return AEZ_DATA_ROOT / f"AEZ_{aez_no}"
+
+def sample_dir(aez_no: int) -> Path:
+    return aez_dir(aez_no) / "samples"
 
 def utm_crs_for_lonlat(lon: float, lat: float) -> CRS:
     """Return a metric UTM CRS suitable for buffering/area at a given lon/lat."""
@@ -598,11 +607,11 @@ def collate_samples_to_gee_csv(aez_list: List[int], out_csv: Path) -> None:
     frames = []
     file_count = 0  
     for aez in aez_list:
-        sample_dir = Path(f"AEZ_{aez}") / "samples"
-        if not sample_dir.exists():
+        samples_path = sample_dir(aez)
+        if not samples_path.exists():
             log(f"[AEZ {aez}] No 'samples' directory found.")
             continue
-        for p in sorted(sample_dir.glob("tile_*.csv")):
+        for p in sorted(samples_path.glob("tile_*.csv")):
             file_count += 1 
             try:
                 df = pd.read_csv(p)
@@ -674,7 +683,7 @@ def process_tile(aez_no: int, tile_poly: Polygon, tile_index: int) -> pd.DataFra
     points_gdf = stratified_sample_points(class_geoms, tile_poly, aez_no, tile_index, seed=RANDOM_SEED)
 
     # Write
-    out_csv = Path(f"AEZ_{aez_no}") / "samples" / f"tile_{tile_index}.csv"
+    out_csv = sample_dir(aez_no) / f"tile_{tile_index}.csv"
     write_samples_csv(points_gdf, out_csv)
     
     n1 = int((points_gdf["label"] == 1).sum()) if not points_gdf.empty else 0
@@ -716,7 +725,7 @@ def _process_tile_worker(args):
     points_gdf = stratified_sample_points(class_geoms, tile_poly, aez_no, tile_index, seed=RANDOM_SEED)
 
     # Write CSV
-    out_csv = Path(f"AEZ_{aez_no}") / "samples" / f"tile_{tile_index}.csv"
+    out_csv = sample_dir(aez_no) / f"tile_{tile_index}.csv"
     n1 = int((points_gdf["label"] == 1).sum()) if not points_gdf.empty else 0
     n2 = int((points_gdf["label"] == 2).sum()) if not points_gdf.empty else 0
     n3 = int((points_gdf["label"] == 3).sum()) if not points_gdf.empty else 0
@@ -738,7 +747,7 @@ def sample_points_from_tiles(aez_no: int):
     """
     Read AEZ_<no>/status.csv; build tiles; run processing for each tile.
     """
-    status_csv = Path(f"AEZ_{aez_no}") / "status.csv"
+    status_csv = aez_dir(aez_no) / "status.csv"
     if not status_csv.exists():
         raise FileNotFoundError(f"Missing status file: {status_csv}")
 
@@ -753,7 +762,7 @@ def sample_points_from_tiles(aez_no: int):
     summaries = []
     for idx, tile in enumerate(df["tile_geom"]):
         # Optional: skip tiles where points sampling already exists
-        # out_csv = Path(f"AEZ_{aez_no}") / "samples" / f"tile_{idx}.csv"
+        # out_csv = sample_dir(aez_no) / f"tile_{idx}.csv"
         # if out_csv.exists(): continue
 
         # Process
@@ -794,7 +803,7 @@ def sample_points_from_tiles_parallel(aez_no: int):
     On Linux (fork) we load boundaries ONCE in the parent and share to children via CoW.
     On spawn platforms, we load once per worker via initializer.
     """
-    status_csv = Path(f"AEZ_{aez_no}") / "status.csv"
+    status_csv = aez_dir(aez_no) / "status.csv"
     if not status_csv.exists():
         raise FileNotFoundError(f"Missing status file: {status_csv}")
 
@@ -859,17 +868,103 @@ def _clear_parent_cache():
     _BOUND_GDF = None; _BOUND_CRS = None; _BOUND_AEZ = None
     gc.collect()
 
-        
+def parse_int_list(values: List[str], field_name: str) -> List[int]:
+    parsed = []
+    for value in values:
+        for token in str(value).split(","):
+            token = token.strip()
+            if not token:
+                continue
+            try:
+                parsed.append(int(token))
+            except ValueError as exc:
+                raise ValueError(f"Invalid integer '{token}' in {field_name}") from exc
+    if not parsed:
+        raise ValueError(f"No values provided for {field_name}")
+    return parsed
 
+def run_sampling_for_aez_list(aez_list: List[int]) -> None:
+    for aez_no in aez_list:
+        log(f"=== AEZ {aez_no} START ===")
+        sample_points_from_tiles_parallel(aez_no)
+        _clear_parent_cache()
+        log(f"=== AEZ {aez_no} FINISH ===")
+
+def resolve_single_collate_out(aez_no: int, collate_out: Optional[str]) -> Path:
+    """
+    For single-AEZ mode, keep collated output inside that AEZ folder by default.
+    If a relative path is provided, resolve it under AEZ_<no>/.
+    """
+    if not collate_out:
+        return aez_dir(aez_no) / f"gee_samples_aez_{aez_no}.csv"
+    out_path = Path(collate_out)
+    if out_path.is_absolute():
+        return out_path
+    return aez_dir(aez_no) / out_path
+
+def build_argument_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description="Generate local samples from AEZ boundaries and status.csv tiles."
+    )
+    parser.add_argument(
+        "--aez-root",
+        default=".",
+        help="Base directory containing AEZ_<no> folders with status.csv and samples/.",
+    )
+    parser.add_argument(
+        "--boundary-root",
+        default="",
+        help="Root directory to recursively search AEZ boundary files. Defaults to current directory.",
+    )
+
+    subparsers = parser.add_subparsers(dest="mode", required=True)
+
+    all_parser = subparsers.add_parser("all", help="Run sampling for multiple AEZs.")
+    all_parser.add_argument(
+        "--aezs",
+        nargs="+",
+        help="AEZ list, e.g. --aezs 1 2 3 or --aezs 1,2,3. Default is 1..19.",
+    )
+    all_parser.add_argument(
+        "--skip-collate",
+        action="store_true",
+        help="Skip final collation step.",
+    )
+    all_parser.add_argument(
+        "--collate-out",
+        default="export/gee_samples_all.csv",
+        help="Output CSV path for collated samples.",
+    )
+
+    single_parser = subparsers.add_parser("single", help="Run sampling for one AEZ.")
+    single_parser.add_argument("--aez", type=int, required=True, help="AEZ number to process.")
+    single_parser.add_argument(
+        "--skip-collate",
+        action="store_true",
+        help="Skip final collation step for this AEZ.",
+    )
+    single_parser.add_argument(
+        "--collate-out",
+        default=None,
+        help="Optional output file name/path for collated single-AEZ samples. "
+             "Relative paths are saved inside AEZ_<no>/.",
+    )
+    return parser
 
 if __name__ == "__main__":
-    # Example AEZs (same as your loop)
-    #AEZ = int(sys.argv[1])
-    #aez_list = list(range(6,20))
-    #for AEZ in aez_list:
-    #log(f"=== AEZ {AEZ} START ===")
-    #sample_points_from_tiles_parallel(AEZ)
-    #_clear_parent_cache()
-    #log(f"=== AEZ {AEZ} FINISH ===")
-    aez_list = list(range(1,20))
-    collate_samples_to_gee_csv(aez_list, Path("export/gee_samples_all.csv"))
+    args = build_argument_parser().parse_args()
+
+    AEZ_DATA_ROOT = Path(args.aez_root)
+    BOUNDARY_SEARCH_ROOT = args.boundary_root
+
+    if args.mode == "all":
+        aez_list = parse_int_list(args.aezs, "--aezs") if args.aezs else list(range(1, 20))
+        run_sampling_for_aez_list(aez_list)
+        if not args.skip_collate:
+            collate_samples_to_gee_csv(aez_list, Path(args.collate_out))
+    else:
+        aez_list = [args.aez]
+        run_sampling_for_aez_list(aez_list)
+        if not args.skip_collate:
+            single_out = resolve_single_collate_out(args.aez, args.collate_out)
+            collate_samples_to_gee_csv(aez_list, single_out)

@@ -1050,6 +1050,12 @@ def store_emb_and_generate_LULC(AEZ_no):
         "rest": 0
     }
 
+    emb = ee.ImageCollection("GOOGLE/SATELLITE_EMBEDDING/V1/ANNUAL")
+
+    emb = emb.filterDate('2024-01-01', '2025-01-01').filterBounds(roi_boundary).mosaic()
+
+    samples = ee.FeatureCollection("projects/raman-461708/assets/gee_samples_all").filter(ee.Filter.eq('aez_no', AEZ_no))
+
     def write_to_gee(fc, asset_name):
         
         task = ee.batch.Export.table.toAsset(
@@ -1085,96 +1091,16 @@ def store_emb_and_generate_LULC(AEZ_no):
             )
             # Export this chunk
             asset_id = f"{asset_prefix}_emb_{index}"
-            #write_to_gee(chunk_samples, asset_id)
+            write_to_gee(chunk_samples, asset_id)
             assets.append(asset_id)
         return assets
     
-    def stratified_sample_by_tile_label(
-        fc: ee.FeatureCollection,
-        tile_prop: str = 'tile_index',
-        label_prop: str = 'label',
-        fraction: float = 0.2,
-        seed: int = 1,
-        min_per_group: int = 1,
-        drop_random: bool = True
-    ) -> ee.FeatureCollection:
-        """
-        Stratified random sample (by fraction) from each (tile_prop, label_prop) stratum.
-
-        Returns:
-            ee.FeatureCollection with a per-stratum fraction (ceil) and >= min_per_group (bounded by stratum size).
-        """
-        # Clamp fraction
-        fraction = max(0.0, min(1.0, float(fraction)))
-
-        # All unique (tile, label) pairs
-        groups = fc.distinct([tile_prop, label_prop]).select([tile_prop, label_prop])
-
-        empty_fc   = ee.FeatureCollection([])
-        empty_list = ee.List([])
-
-        def _iterate(group, acc_list):
-            group     = ee.Feature(group)
-            acc_list  = ee.List(acc_list)
-
-            tile_val  = group.get(tile_prop)
-            label_val = group.get(label_prop)
-
-            subset = (fc
-                    .filter(ee.Filter.eq(tile_prop, tile_val))
-                    .filter(ee.Filter.eq(label_prop, label_val)))
-
-            size = ee.Number(subset.size())
-            n = size.multiply(fraction).ceil()  # exact-ish per-group fraction
-            n = n.max(ee.Number(min_per_group)).min(size)  # enforce min, cap by size
-
-            sampled = ee.FeatureCollection(ee.Algorithms.If(
-                size.gt(0),
-                subset.randomColumn('rand', seed).sort('rand').limit(n),
-                empty_fc
-            ))
-
-            if drop_random:
-                # Remove 'rand' safely without touching .first() on empty collections
-                sampled = sampled.map(lambda f: f.select(ee.List(f.propertyNames()).remove('rand')))
-
-            # Append sampled features (as a list) to the accumulator list
-            return acc_list.cat(sampled.toList(sampled.size()))
-
-        # Accumulate a List<Feature>, then wrap once as a FeatureCollection
-        sampled_list = ee.List(groups.iterate(_iterate, empty_list))
-        sampled_fc   = ee.FeatureCollection(sampled_list)
-        return sampled_fc
-
-    emb = ee.ImageCollection("GOOGLE/SATELLITE_EMBEDDING/V1/ANNUAL")
-
-    emb_2025 = emb.filterDate('2024-01-01', '2025-01-01').filterBounds(roi_boundary).mosaic()
-    emb_2024 = emb.filterDate('2023-01-01', '2024-01-01').filterBounds(roi_boundary).mosaic()
-    emb_2023 = emb.filterDate('2022-01-01', '2023-01-01').filterBounds(roi_boundary).mosaic()
-
-    samples = ee.FeatureCollection("projects/raman-461708/assets/gee_samples_all").filter(ee.Filter.eq('aez_no', AEZ_no)) 
-    samples = stratified_sample_by_tile_label(samples, fraction=0.33, seed=42, min_per_group=50)
-    #import ipdb
-    #ipdb.set_trace()
-    sample_assets_2025 = export_samples_in_chunks(
-        emb_2025,  # your image
+    sample_assets = export_samples_in_chunks(
+        emb,  # your image
         samples,  # your FeatureCollection
-        chunk_size=20000,  # adjust as needed (try 1000-10000)
-        asset_prefix=f'projects/raman-461708/assets/AEZ_{AEZ_no}_samples_from_local_2025'
+        chunk_size=30000,  # adjust as needed (try 1000-10000)
+        asset_prefix=f'projects/raman-461708/assets/AEZ_{AEZ_no}_samples_from_local'
     )
-    sample_assets_2024 = export_samples_in_chunks(
-        emb_2024,  # your image
-        samples,  # your FeatureCollection
-        chunk_size=20000,  # adjust as needed (try 1000-10000)
-        asset_prefix=f'projects/raman-461708/assets/AEZ_{AEZ_no}_samples_from_local_2024'
-    )
-    sample_assets_2023 = export_samples_in_chunks(
-        emb_2023,  # your image
-        samples,  # your FeatureCollection
-        chunk_size=20000,  # adjust as needed (try 1000-10000)
-        asset_prefix=f'projects/raman-461708/assets/AEZ_{AEZ_no}_samples_from_local_2023'
-    )
-    sample_assets = sample_assets_2025 + sample_assets_2024 + sample_assets_2023
     
     # Read each asset path as a FeatureCollection and merge them
     def get_samples(roi):
@@ -1186,10 +1112,8 @@ def store_emb_and_generate_LULC(AEZ_no):
         return all_samples 
 
     def get_classifier(bandnames, roi):
-        import ipdb
-        ipdb.set_trace()
         classifier = ee.Classifier.smileRandomForest(numberOfTrees=100, seed=42).train(
-            features=get_samples(roi).limit(100000),
+            features=get_samples(roi),
             classProperty='label',
             inputProperties=bandnames
         )
@@ -1266,7 +1190,7 @@ def store_emb_and_generate_LULC(AEZ_no):
             task = ee.batch.Export.image.toAsset(
                 image=final_lulc_img,#.select("predicted_label"),
                 description='lulc_' + filename_prefix + "_v4" + "_" + currStartDate + "_" + currEndDate,
-                assetId='projects/raman-461708/assets/'+filename_prefix + "_v4_temporal_3years_"+parts+"_"+currStartDate+"_"+currEndDate,
+                assetId='projects/raman-461708/assets/'+filename_prefix + "_v4_temporal_"+parts+"_"+currStartDate+"_"+currEndDate,
                 pyramidingPolicy = {'predicted_label': 'mode'},
                 scale = 10,
                 maxPixels = 1e13,
@@ -1274,14 +1198,14 @@ def store_emb_and_generate_LULC(AEZ_no):
             )
             task.start()
         return
-    if AEZ_no in [2,6]:
+    if AEZ_no in [6,]:
         parts_fc = split_roi(roi_boundary)
         part1 = parts_fc.filter(ee.Filter.eq('part', 1))
         part2 = parts_fc.filter(ee.Filter.eq('part', 2))
-        #get_lulc(part1, "_part1")
+        get_lulc(part1, "_part1")
         get_lulc(part2, "_part2")
     else:
         get_lulc(roi_boundary, "")
 
-for AEZ_no in [6]:
+for AEZ_no in [8]:
     store_emb_and_generate_LULC(AEZ_no)
