@@ -1197,8 +1197,7 @@ def store_emb_and_generate_LULC(AEZ_no):
 
     def get_emb_date(date):
         date = datetime.strptime(date, "%Y-%m-%d")
-        next_year = date.year + 1
-        return f"{next_year}-01-01"
+        return f"{date.year}-01-01"
 
     def get_lulc(roi_boundary, parts=""):
         startDate = '2017-07-01'
