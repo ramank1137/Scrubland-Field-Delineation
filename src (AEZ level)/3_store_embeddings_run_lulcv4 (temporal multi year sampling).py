@@ -989,7 +989,7 @@ def store_emb_and_generate_LULC(AEZ_no):
         final_cluster_classified_img = Get_final_prediction_image(distance_imgs_list)
         final_cluster_classified_img = final_cluster_classified_img.rename(['predicted_cluster'])
         final_classified_img = final_classified_img.addBands(final_cluster_classified_img)
-        return final_classified_img, final_LSMC_NDVI_TS
+        return final_classified_img
 
     def split_roi(fc):
         roi = ee.Feature(fc.first()).geometry().dissolve()
@@ -1085,7 +1085,7 @@ def store_emb_and_generate_LULC(AEZ_no):
             )
             # Export this chunk
             asset_id = f"{asset_prefix}_emb_{index}"
-            #write_to_gee(chunk_samples, asset_id)
+            write_to_gee(chunk_samples, asset_id)
             assets.append(asset_id)
         return assets
     
@@ -1186,8 +1186,8 @@ def store_emb_and_generate_LULC(AEZ_no):
         return all_samples 
 
     def get_classifier(bandnames, roi):
-        import ipdb
-        ipdb.set_trace()
+        #import ipdb
+        #ipdb.set_trace()
         classifier = ee.Classifier.smileRandomForest(numberOfTrees=100, seed=42).train(
             features=get_samples(roi).limit(100000),
             classProperty='label',
@@ -1238,7 +1238,7 @@ def store_emb_and_generate_LULC(AEZ_no):
             bare_image = get_barrenland_prediction(roi_boundary, currStartDate, currEndDate)
             combined_water_builtup_barren_img = combined_water_builtup_img.where(combined_water_builtup_img.select('predicted_label').eq(0), bare_image)
             
-            cropping_frequency_img, time_series_data = get_cropping_frequency(roi_boundary, currStartDate, currEndDate)
+            cropping_frequency_img = get_cropping_frequency(roi_boundary, currStartDate, currEndDate)
 
             embStartDate = get_emb_date(currStartDate)
             embEndDate = get_emb_date(currEndDate)
@@ -1252,7 +1252,10 @@ def store_emb_and_generate_LULC(AEZ_no):
             cropland_image = get_cropland_prediction(currStartDate, currEndDate, roi_boundary)
             tree_image = cropland_image.where(cropland_image.select('predicted_label').eq(5), 12)
             combined_img = combined_img.where(combined_img.select('predicted_label').eq(12), tree_image)
-            final_lulc_img = combined_img.addBands(ee.Image.constant(-1).rename(['predicted_cluster'])).where(combined_img.select('predicted_label').eq(5), cropping_frequency_img)
+            final_lulc_img = combined_img.where(
+                                combined_img.select('predicted_label').eq(5),
+                                cropping_frequency_img.select('predicted_label')
+                            ).addBands(cropping_frequency_img.select('predicted_cluster'))
 
             final_output_filename = curr_filename+'_LULCmap_'+str(scale)+'m'
             final_output_assetid = 'projects/ee-raman/assets/LULC_Version2_Outputs_NewHierarchy/'+final_output_filename
@@ -1282,5 +1285,5 @@ def store_emb_and_generate_LULC(AEZ_no):
     else:
         get_lulc(roi_boundary, "")
 
-for AEZ_no in [6]:
+for AEZ_no in [1,2,3,5,6,7]:
     store_emb_and_generate_LULC(AEZ_no)
