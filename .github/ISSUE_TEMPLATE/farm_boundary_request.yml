@@ -1,0 +1,94 @@
+name: "Farm Boundary Request"
+description: "Request farm boundary generation for a specific region of interest using a bounding box."
+title: "[Farm Boundary] <short description>"
+labels:
+  - farm-boundary
+  - request
+  - data-generation
+assignees:
+  - ramank1137   # change to your GitHub username if needed
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for your interest in farm boundary generation.
+        Please share the details below so we can review your region of interest (ROI)
+        and generate farm boundaries for the requested area.
+
+  - type: input
+    id: org
+    attributes:
+      label: "1) Your organization"
+      description: "State your organization or affiliation."
+      placeholder: "e.g., Indian Institute of Technology Delhi / CoreStack / <Company>"
+    validations:
+      required: true
+
+  - type: textarea
+    id: purpose
+    attributes:
+      label: "2) Intended use"
+      description: "Briefly describe how you plan to use the farm boundary data."
+      placeholder: "e.g., Parcel-level monitoring / Farmer outreach / Field verification / Analytics"
+    validations:
+      required: true
+
+  - type: markdown
+    attributes:
+      value: |
+        ### 3) Region of Interest (ROI)
+        Please define your ROI using a bounding box.
+        - Enter coordinates in **WGS84 longitude, latitude** format.
+        - If you already have a GeoJSON polygon for the ROI, you may paste it in the optional field below.
+        - If you have supporting files such as a shapefile, cadastral boundary, or sample farm polygon, zip them and attach them to this issue using the GitHub file upload.
+
+  - type: input
+    id: roi_top_left
+    attributes:
+      label: "4) Bounding Box – Top Left (lon, lat)"
+      description: "Enter the top-left corner of the ROI."
+      placeholder: "e.g., 77.68867639, 10.82116416"
+    validations:
+      required: true
+
+  - type: input
+    id: roi_bottom_right
+    attributes:
+      label: "Bounding Box – Bottom Right (lon, lat)"
+      description: "Enter the bottom-right corner of the ROI."
+      placeholder: "e.g., 78.01980731, 10.43529696"
+    validations:
+      required: true
+
+  - type: textarea
+    id: geojson
+    attributes:
+      label: "Bounding Box / ROI GeoJSON (Optional)"
+      description: "Paste a GeoJSON Feature or Polygon if available."
+      placeholder: |
+        {
+          "type": "Polygon",
+          "coordinates": [
+            [
+              [77.1, 28.9],
+              [77.3, 28.9],
+              [77.3, 28.8],
+              [77.1, 28.8],
+              [77.1, 28.9]
+            ]
+          ]
+        }
+
+  - type: textarea
+    id: context
+    attributes:
+      label: "5) Additional context"
+      description: "Describe anything else that will help us generate accurate farm boundaries (e.g., expected parcel size, irrigation pattern, known field layout, whether the ROI contains mixed land use)."
+
+  - type: markdown
+    attributes:
+      value: |
+        ---
+        **Thank you for submitting a farm boundary request.**
+        Clear ROI details and reference material help us generate more accurate parcel boundaries.
